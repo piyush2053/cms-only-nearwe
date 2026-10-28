@@ -14,7 +14,7 @@ import { useNotification } from "../contexts/NotificationContext";
 import { core_services } from "../utils/api";
 import { useUser } from "../contexts/UserContext";
 import { useAsyncAction } from "../hooks/useAsyncAction";
-import logo from "../assets/logo/logo-removebg.png";
+import { BrandMark } from "../components/ui";
 
 /* ---------------- JWT Decode ---------------- */
 const decodeJwt = (token: string) => {
@@ -203,10 +203,8 @@ const Login = () => {
         <span className="login-orb" style={{ width: 340, height: 340, right: -90, top: -70 }} />
         <span className="login-orb" style={{ width: 600, height: 600, left: -300, bottom: -360 }} />
 
-        <div style={{ display: "flex", alignItems: "center", gap: 12, position: "relative" }}>
-          <span style={{ width: 46, height: 46, borderRadius: 16, background: "#fff", display: "grid", placeItems: "center" }}>
-            <img src={logo} alt="" style={{ height: 26 }} />
-          </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, position: "relative" }}>
+          <BrandMark size={56} style={{ border: "1px solid rgba(255,255,255,0.18)" }} />
           <b style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.02em" }}>
             nearwe<span style={{ fontWeight: 500, color: "#c0c7d4" }}>cms</span>
           </b>
@@ -244,7 +242,7 @@ const Login = () => {
               noValidate
             >
               <div className="login-mobile-brand" style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 26 }}>
-                <img src={logo} alt="" style={{ height: 28 }} />
+                <BrandMark size={42} />
                 <b style={{ fontSize: 18, fontWeight: 800, color: "var(--wy-navy)" }}>
                   nearwe<span style={{ fontWeight: 500, color: "var(--wy-text-2)" }}>cms</span>
                 </b>

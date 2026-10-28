@@ -14,8 +14,8 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
-import image from "../assets/logo/logo-removebg.png";
-import { ApiActivityBar, IconButton } from "../components/ui";
+
+import { ApiActivityBar, BrandMark, IconButton } from "../components/ui";
 import { useAuth } from "../contexts/AuthContext";
 import { useUser } from "../contexts/UserContext";
 import { removeToken } from "../utils/function";
@@ -52,12 +52,11 @@ const ShellStyles = () => (
       box-shadow: 0 30px 60px -30px rgba(32,42,64,0.25);
     }
     .cms-rail-logo {
-      width: 46px; height: 46px; border-radius: 16px;
-      display: grid; place-items: center;
-      background: #fff; box-shadow: var(--wy-shadow-btn);
-      margin-bottom: 8px; border: 0; cursor: pointer; padding: 0;
+      display: grid; place-items: center; border-radius: 16px;
+      background: transparent; margin-bottom: 8px; border: 0; cursor: pointer; padding: 0;
+      transition: transform .2s var(--wy-ease);
     }
-    .cms-rail-logo img { height: 26px; object-fit: contain; }
+    .cms-rail-logo:hover { transform: translateY(-2px) rotate(-3deg); }
     .cms-rail-nav {
       flex: 1; display: flex; flex-direction: column; align-items: center; gap: 10px;
       overflow-y: auto; padding: 4px 8px; scrollbar-width: none;
@@ -190,7 +189,7 @@ const CmsHome: React.FC = () => {
       {showRail && (
         <aside className="cms-rail" aria-label="Main navigation">
           <button type="button" className="cms-rail-logo" onClick={() => go("/insights")} aria-label="Home">
-            <img src={image} alt="" />
+            <BrandMark size={48} />
           </button>
           <nav className="cms-rail-nav">
             {menuItems.map((item) => (
@@ -226,7 +225,7 @@ const CmsHome: React.FC = () => {
           styles={{ body: { padding: 18 }, content: { borderRadius: "0 28px 28px 0" } }}
         >
           <div className="cms-brand" style={{ marginBottom: 22, paddingLeft: 6 }}>
-            <img src={image} alt="" style={{ height: 30 }} />
+            <BrandMark size={40} />
             <b>
               nearwe<span>cms</span>
             </b>
@@ -256,7 +255,7 @@ const CmsHome: React.FC = () => {
             </IconButton>
           )}
           <div className="cms-brand">
-            {!showRail && <img src={image} alt="" style={{ height: 26 }} />}
+            {!showRail && <BrandMark size={36} />}
             <b>
               nearwe<span>cms</span>
             </b>

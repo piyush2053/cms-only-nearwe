@@ -3,6 +3,7 @@ import { Button, Skeleton, type ButtonProps } from "antd";
 import { InboxOutlined } from "@ant-design/icons";
 import { useAsyncAction } from "../hooks/useAsyncAction";
 import { apiActivity } from "../utils/apiActivity";
+import logoMark from "../assets/logo/logo-removebg.png";
 
 // ─── Page scaffolding ────────────────────────────────────────────────────────
 
@@ -163,6 +164,34 @@ export const IconButton = React.forwardRef<
   </button>
 ));
 IconButton.displayName = "IconButton";
+
+// ─── Brand mark ──────────────────────────────────────────────────────────────
+
+/**
+ * The NearWe logo is a white icon with a transparent background, so it must
+ * always sit on a dark tile. Use this everywhere the logo appears.
+ */
+export const BrandMark: React.FC<{ size?: number; style?: React.CSSProperties }> = ({
+  size = 44,
+  style,
+}) => (
+  <span
+    aria-hidden="true"
+    style={{
+      width: size,
+      height: size,
+      borderRadius: Math.round(size * 0.34),
+      display: "inline-grid",
+      placeItems: "center",
+      flexShrink: 0,
+      background: "radial-gradient(120% 120% at 20% 0%, #3559C7 0%, #202A40 62%)",
+      boxShadow: "0 10px 22px -10px rgba(32,42,64,0.7), inset 0 1px 0 rgba(255,255,255,0.12)",
+      ...style,
+    }}
+  >
+    <img src={logoMark} alt="" style={{ width: "62%", height: "62%", objectFit: "contain" }} />
+  </span>
+);
 
 // ─── Global API activity bar ─────────────────────────────────────────────────
 
