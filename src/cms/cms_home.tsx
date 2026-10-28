@@ -1,516 +1,323 @@
 import React, { useState } from "react";
-import { Avatar, Popover, Button, Divider } from "antd";
-import { UserOutlined, LogoutOutlined, FlagFilled, BellOutlined } from "@ant-design/icons";
-import image from "../assets/logo/logo-removebg.png";
-import { Layout, Menu, Drawer, Grid } from "antd";
+import { Avatar, Drawer, Grid, Popover, Tooltip } from "antd";
 import {
   AppstoreOutlined,
+  BellOutlined,
   CalendarOutlined,
-  SettingOutlined,
-  MenuOutlined,
   DashboardOutlined,
+  FlagOutlined,
+  HeartOutlined,
+  LogoutOutlined,
+  MenuOutlined,
+  NotificationOutlined,
+  TeamOutlined,
+  UserOutlined,
 } from "@ant-design/icons";
-import { Outlet, useNavigate, useLocation } from "react-router-dom";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import image from "../assets/logo/logo-removebg.png";
+import { ApiActivityBar, IconButton } from "../components/ui";
+import { useAuth } from "../contexts/AuthContext";
+import { useUser } from "../contexts/UserContext";
 import { removeToken } from "../utils/function";
 
-const { Header, Sider, Content } = Layout;
 const { useBreakpoint } = Grid;
 
-const INDIGO = "#3F51B5";
-const INDIGO_DARK = "#303F9F";
-const INDIGO_DEEPER = "#283593";
-
 const menuItems = [
-  { key: "/insights",      icon: <DashboardOutlined />,  label: "Insights" },
-  { key: "/users",         icon: <UserOutlined />,       label: "User Management" },
-  { key: "/categories",    icon: <AppstoreOutlined />,   label: "Category Management" },
-  { key: "/events",        icon: <CalendarOutlined />,   label: "Event Management" },
-  { key: "/app",           icon: <SettingOutlined />,    label: "Advertise" },
-  { key: "/reports",       icon: <FlagFilled />,         label: "Reports" },
-  { key: "/announcements", icon: <BellOutlined />,       label: "Announcements" },
-  { key: "/interests",     icon: <UserOutlined />,       label: "User Interests" },
+  { key: "/insights",      icon: <DashboardOutlined />,    label: "Insights",      title: "Insights" },
+  { key: "/users",         icon: <TeamOutlined />,         label: "Users",         title: "User Management" },
+  { key: "/categories",    icon: <AppstoreOutlined />,     label: "Categories",    title: "Category Management" },
+  { key: "/events",        icon: <CalendarOutlined />,     label: "Events",        title: "Event Management" },
+  { key: "/app",           icon: <NotificationOutlined />, label: "Advertise",     title: "Advertise" },
+  { key: "/reports",       icon: <FlagOutlined />,         label: "Reports",       title: "Reports" },
+  { key: "/announcements", icon: <BellOutlined />,         label: "Announcements", title: "Announcements" },
+  { key: "/interests",     icon: <HeartOutlined />,        label: "Interests",     title: "User Interests" },
 ];
 
-// ─── Sidebar brand area ───────────────────────────────────────────────────────
-const SidebarLogo: React.FC = () => (
-  <div
-    style={{
-      height: 72,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      borderBottom: "1px solid rgba(255,255,255,0.10)",
-      marginBottom: 8,
-      gap: 10,
-      padding: "0 20px",
-    }}
-  >
-    <div
-      style={{
-        width: 36,
-        height: 36,
-        borderRadius: 10,
-        background: "rgba(255,255,255,0.15)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        flexShrink: 0,
-      }}
-    >
-      <img src={image} alt="logo" style={{ height: 22, objectFit: "contain" }} />
-    </div>
-    <div>
-      <div style={{ color: "#FFFFFF", fontSize: 14, fontWeight: 700, lineHeight: 1.2 }}>
-        Admin Panel
-      </div>
-      <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 10, fontWeight: 500 }}>
-        CMS Dashboard
-      </div>
-    </div>
-  </div>
-);
+const RAIL_WIDTH = 76;
+const RAIL_GAP = 18;
 
-// ─── Curved notch active item ─────────────────────────────────────────────────
-const SidebarStyles = () => (
+const ShellStyles = () => (
   <style>{`
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
-
-    * { font-family: 'DM Sans', -apple-system, sans-serif; }
-
-    .cms-sidebar .ant-menu-item {
-      border-radius: 12px !important;
-      margin: 2px 12px !important;
-      width: calc(100% - 24px) !important;
-      padding-left: 14px !important;
-      height: 44px !important;
-      line-height: 44px !important;
-      transition: all 0.2s ease !important;
+    .cms-shell { min-height: 100vh; }
+    .cms-rail {
+      position: fixed; z-index: 100;
+      top: ${RAIL_GAP}px; bottom: ${RAIL_GAP}px; left: ${RAIL_GAP}px;
+      width: ${RAIL_WIDTH}px;
+      display: flex; flex-direction: column; align-items: center; gap: 10px;
+      padding: 16px 0;
+      border-radius: 40px;
+      background: rgba(255,255,255,0.45);
+      border: 1px solid rgba(255,255,255,0.85);
+      -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+      box-shadow: 0 30px 60px -30px rgba(32,42,64,0.25);
     }
-
-    .cms-sidebar .ant-menu-item:hover {
-      background: rgba(255,255,255,0.10) !important;
-      color: #fff !important;
+    .cms-rail-logo {
+      width: 46px; height: 46px; border-radius: 16px;
+      display: grid; place-items: center;
+      background: #fff; box-shadow: var(--wy-shadow-btn);
+      margin-bottom: 8px; border: 0; cursor: pointer; padding: 0;
     }
-
-    .cms-sidebar .ant-menu-item-selected {
-      background: rgba(255,255,255,0.18) !important;
-      color: #fff !important;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.15) !important;
-      position: relative !important;
+    .cms-rail-logo img { height: 26px; object-fit: contain; }
+    .cms-rail-nav {
+      flex: 1; display: flex; flex-direction: column; align-items: center; gap: 10px;
+      overflow-y: auto; padding: 4px 8px; scrollbar-width: none;
     }
+    .cms-rail-nav::-webkit-scrollbar { display: none; }
+    .cms-rail-sep { width: 28px; height: 1px; background: rgba(32,42,64,0.08); margin: 4px 0; }
 
-    .cms-sidebar .ant-menu-item-selected::before {
-      content: '';
-      position: absolute;
-      left: 0;
-      top: 50%;
-      transform: translateY(-50%);
-      width: 3px;
-      height: 24px;
-      background: #FFFFFF;
-      border-radius: 0 3px 3px 0;
+    .cms-main { transition: margin-left .2s; }
+    .cms-header {
+      position: sticky; top: 0; z-index: 90;
+      display: flex; align-items: center; gap: 16px;
+      padding: 16px 28px 12px;
     }
-
-    .cms-sidebar .ant-menu-item .ant-menu-item-icon {
-      font-size: 16px !important;
+    .cms-header::before {
+      content: ""; position: absolute; inset: 0; z-index: -1;
+      background: linear-gradient(180deg, rgba(232,236,244,0.92) 40%, rgba(232,236,244,0));
+      -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+      -webkit-mask-image: linear-gradient(180deg, #000 70%, transparent);
+      mask-image: linear-gradient(180deg, #000 70%, transparent);
     }
+    .cms-brand { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .cms-brand b { font-size: 19px; font-weight: 800; color: var(--wy-navy); letter-spacing: -0.02em; }
+    .cms-brand span { font-weight: 500; color: var(--wy-text-2); }
+    .cms-header-nav { flex: 1; display: flex; justify-content: center; min-width: 0; }
+    .cms-header-right { display: flex; align-items: center; gap: 10px; margin-left: auto; flex-shrink: 0; }
 
-    .cms-sidebar .ant-menu-item .ant-menu-title-content {
-      font-size: 13px !important;
-      font-weight: 500 !important;
+    .cms-user-chip {
+      display: flex; align-items: center; gap: 10px;
+      padding: 4px 14px 4px 4px; border-radius: 999px;
+      background: #fff; border: 1px solid rgba(255,255,255,0.9);
+      box-shadow: var(--wy-shadow-btn); cursor: pointer;
+      transition: transform .2s var(--wy-ease), box-shadow .2s;
+      font: inherit; color: inherit;
     }
+    .cms-user-chip:hover { transform: translateY(-2px); box-shadow: var(--wy-shadow-float); }
+    .cms-user-chip .name { font-size: 12px; font-weight: 700; color: var(--wy-navy); line-height: 1.2; text-align: left; }
+    .cms-user-chip .mail { font-size: 10px; color: var(--wy-muted); line-height: 1.2; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-    .cms-sidebar .ant-menu-item-selected .ant-menu-title-content {
-      font-weight: 600 !important;
+    .cms-content { padding: 8px 28px 40px; max-width: 1480px; margin: 0 auto; }
+
+    .cms-drawer-nav { display: flex; flex-direction: column; gap: 6px; }
+    .cms-drawer-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 12px; border-radius: 999px; border: 0; background: transparent;
+      font: 600 14px var(--wy-font); color: var(--wy-text-2); cursor: pointer; text-align: left;
     }
+    .cms-drawer-item .cms-icon-btn { width: 38px; height: 38px; box-shadow: none; pointer-events: none; }
+    .cms-drawer-item.is-active { background: #fff; color: var(--wy-navy); box-shadow: var(--wy-shadow-btn); }
 
-    /* Scrollbar */
-    .cms-sidebar::-webkit-scrollbar { width: 0px; }
-
-    /* Table rows */
-    .cms-table-row:hover td {
-      background: #F0F2FA !important;
-    }
-
-    /* Card hover effect */
-    .cms-stat-card {
-      transition: transform 0.2s ease, box-shadow 0.2s ease !important;
-    }
-    .cms-stat-card:hover {
-      transform: translateY(-2px) !important;
-      box-shadow: 0 8px 24px rgba(63,81,181,0.15) !important;
+    @media (max-width: 767px) {
+      .cms-header { padding: 12px 16px 10px; gap: 10px; }
+      .cms-content { padding: 4px 16px 32px; }
     }
   `}</style>
 );
 
-// ─── User popover content ─────────────────────────────────────────────────────
-const AdminPopover: React.FC<{ onLogout: () => void }> = ({ onLogout }) => (
-  <div style={{ width: 220, padding: "4px 0" }}>
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "12px 16px 14px",
-      }}
-    >
-      <Avatar
-        size={40}
-        style={{
-          background: `linear-gradient(135deg, ${INDIGO}, ${INDIGO_DARK})`,
-          fontSize: 15,
-          fontWeight: 700,
-          flexShrink: 0,
-        }}
-        icon={<UserOutlined />}
-      />
-      <div style={{ minWidth: 0 }}>
-        <div
-          style={{
-            fontSize: 13,
-            fontWeight: 700,
-            color: "#212121",
-            lineHeight: 1.3,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          Admin User
-        </div>
-        <div
-          style={{
-            fontSize: 11,
-            color: "#9E9E9E",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          admin@example.com
-        </div>
-      </div>
-    </div>
+const initials = (name?: string, email?: string) => {
+  const src = (name || email || "A").trim();
+  const parts = src.split(/[\s@._-]+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? "A") + (parts[1]?.[0] ?? "")).toUpperCase();
+};
 
-    <Divider style={{ margin: "0 0 6px" }} />
-
-    <div style={{ padding: "0 8px 8px" }}>
-      <Button
-        type="text"
-        danger
-        block
-        icon={<LogoutOutlined />}
-        onClick={onLogout}
-        style={{
-          textAlign: "left",
-          justifyContent: "flex-start",
-          height: 38,
-          borderRadius: 8,
-          fontWeight: 600,
-          fontSize: 13,
-        }}
-      >
-        Sign Out
-      </Button>
-    </div>
-  </div>
-);
-
-// ─── Bottom user info in sidebar ──────────────────────────────────────────────
-const SidebarFooter: React.FC = () => (
-  <div
-    style={{
-      padding: "12px 16px",
-      borderTop: "1px solid rgba(255,255,255,0.10)",
-      display: "flex",
-      alignItems: "center",
-      gap: 10,
-    }}
-  >
-    <Avatar
-      size={32}
-      style={{
-        background: "rgba(255,255,255,0.20)",
-        fontSize: 13,
-        fontWeight: 700,
-        flexShrink: 0,
-      }}
-      icon={<UserOutlined />}
-    />
-    <div style={{ minWidth: 0, flex: 1 }}>
-      <div style={{ color: "#FFFFFF", fontSize: 12, fontWeight: 600, lineHeight: 1.3 }}>
-        Admin User
-      </div>
-      <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 10 }}>
-        Online
-      </div>
-    </div>
-    <div
-      style={{
-        width: 8,
-        height: 8,
-        borderRadius: "50%",
-        background: "#69F0AE",
-        boxShadow: "0 0 0 2px rgba(105,240,174,0.3)",
-        flexShrink: 0,
-      }}
-    />
-  </div>
-);
-
-// ─── Sidebar content (shared between desktop & drawer) ────────────────────────
-const SidebarContent: React.FC<{ selectedKey: string; onNavigate: (key: string) => void }> = ({
-  selectedKey,
-  onNavigate,
+const AccountMenu: React.FC<{ name: string; email: string; onLogout: () => void }> = ({
+  name,
+  email,
+  onLogout,
 }) => (
-  <div
-    style={{
-      height: "100%",
-      display: "flex",
-      flexDirection: "column",
-      background: `linear-gradient(160deg, ${INDIGO} 0%, ${INDIGO_DEEPER} 100%)`,
-    }}
-  >
-    <SidebarLogo />
-
-    <div
-      className="cms-sidebar"
-      style={{ flex: 1, overflowY: "auto", padding: "4px 0" }}
-    >
-      {/* Section label */}
-      <div
-        style={{
-          padding: "8px 24px 4px",
-          fontSize: 9,
-          fontWeight: 700,
-          color: "rgba(255,255,255,0.30)",
-          letterSpacing: "0.12em",
-          textTransform: "uppercase",
-        }}
-      >
-        Main Menu
+  <div style={{ width: 240 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "6px 4px 14px" }}>
+      <Avatar size={44} style={{ background: "var(--wy-navy)", fontWeight: 700 }}>
+        {initials(name, email)}
+      </Avatar>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--wy-navy)" }}>{name}</div>
+        <div style={{ fontSize: 12, color: "var(--wy-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {email}
+        </div>
       </div>
-      <Menu
-        theme="dark"
-        mode="inline"
-        selectedKeys={[selectedKey]}
-        onClick={(e) => onNavigate(e.key)}
-        items={menuItems}
-        style={{
-          border: "none",
-          background: "transparent",
-        }}
-      />
     </div>
-
-    <SidebarFooter />
+    <button
+      type="button"
+      onClick={onLogout}
+      className="cms-drawer-item"
+      style={{ width: "100%", color: "var(--wy-danger)", background: "#FCE9E7" }}
+    >
+      <LogoutOutlined /> Sign out
+    </button>
   </div>
 );
 
-// ─── Component ────────────────────────────────────────────────────────────────
 const CmsHome: React.FC = () => {
-  const navigate    = useNavigate();
-  const location    = useLocation();
-  const screens     = useBreakpoint();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const screens = useBreakpoint();
+  const { logout } = useAuth();
+  const { user, clearUser } = useUser();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
 
-  const selectedKey = location.pathname;
+  const selectedKey =
+    menuItems.find((m) => location.pathname === m.key || location.pathname.startsWith(m.key + "/"))?.key ??
+    location.pathname;
+
+  const name = (user?.name as string) || (user?.username as string) || "Admin";
+  const email = (user?.email as string) || "admin";
 
   const handleLogout = () => {
+    setAccountOpen(false);
+    clearUser();
     removeToken();
+    logout();
     navigate("/login", { replace: true });
   };
 
-  const handleNavigate = (key: string) => {
-    navigate(key);
+  const go = (key: string) => {
     setDrawerOpen(false);
+    if (key !== selectedKey) navigate(key);
   };
 
-  const currentPage = menuItems.find((m) => m.key === selectedKey)?.label || "Dashboard";
+  const showRail = !!screens.md;
+  const showTabs = !!screens.xl;
+  const mainOffset = showRail ? RAIL_WIDTH + RAIL_GAP * 2 : 0;
 
   return (
-    <Layout style={{ minHeight: "100vh", background: "#F0F2FA" }}>
-      <SidebarStyles />
+    <div className="cms-shell">
+      <ShellStyles />
+      <ApiActivityBar />
 
-      {/* ── Desktop Sidebar ── */}
-      {screens.md && (
-        <Sider
-          width={248}
-          style={{
-            background: "transparent",
-            position: "fixed",
-            left: 0,
-            top: 0,
-            bottom: 0,
-            zIndex: 100,
-            // Curved right side
-            borderTopRightRadius: 24,
-            borderBottomRightRadius: 24,
-            overflow: "hidden",
-            boxShadow: "4px 0 24px rgba(63,81,181,0.20)",
-          }}
-        >
-          <SidebarContent selectedKey={selectedKey} onNavigate={handleNavigate} />
-        </Sider>
+      {/* ── Icon rail ── */}
+      {showRail && (
+        <aside className="cms-rail" aria-label="Main navigation">
+          <button type="button" className="cms-rail-logo" onClick={() => go("/insights")} aria-label="Home">
+            <img src={image} alt="" />
+          </button>
+          <nav className="cms-rail-nav">
+            {menuItems.map((item) => (
+              <Tooltip key={item.key} title={item.title} placement="right">
+                <IconButton
+                  label={item.title}
+                  active={selectedKey === item.key}
+                  aria-current={selectedKey === item.key ? "page" : undefined}
+                  onClick={() => go(item.key)}
+                >
+                  {item.icon}
+                </IconButton>
+              </Tooltip>
+            ))}
+          </nav>
+          <span className="cms-rail-sep" />
+          <Tooltip title="Sign out" placement="right">
+            <IconButton label="Sign out" onClick={handleLogout}>
+              <LogoutOutlined />
+            </IconButton>
+          </Tooltip>
+        </aside>
       )}
 
-      {/* ── Mobile Drawer ── */}
-      {!screens.md && (
+      {/* ── Mobile drawer ── */}
+      {!showRail && (
         <Drawer
           placement="left"
-          closable={false}
           open={drawerOpen}
           onClose={() => setDrawerOpen(false)}
-          width={248}
-          styles={{
-            body: { padding: 0, background: "transparent" },
-            content: {
-              borderTopRightRadius: 24,
-              borderBottomRightRadius: 24,
-              overflow: "hidden",
-            },
-          }}
+          width={280}
+          closable={false}
+          styles={{ body: { padding: 18 }, content: { borderRadius: "0 28px 28px 0" } }}
         >
-          <SidebarContent selectedKey={selectedKey} onNavigate={handleNavigate} />
+          <div className="cms-brand" style={{ marginBottom: 22, paddingLeft: 6 }}>
+            <img src={image} alt="" style={{ height: 30 }} />
+            <b>
+              nearwe<span>cms</span>
+            </b>
+          </div>
+          <nav className="cms-drawer-nav">
+            {menuItems.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                className={`cms-drawer-item ${selectedKey === item.key ? "is-active" : ""}`}
+                onClick={() => go(item.key)}
+              >
+                <span className={`cms-icon-btn ${selectedKey === item.key ? "is-active" : ""}`}>{item.icon}</span>
+                {item.title}
+              </button>
+            ))}
+          </nav>
         </Drawer>
       )}
 
-      {/* ── Main Layout (offset for fixed sidebar) ── */}
-      <Layout
-        style={{
-          marginLeft: screens.md ? 248 : 0,
-          background: "#F0F2FA",
-        }}
-      >
-        {/* ── Header ── */}
-        <Header
-          style={{
-            background: "#FFFFFF",
-            padding: "0 24px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            borderBottom: "1px solid #E3E6F0",
-            boxShadow: "0 2px 12px rgba(63,81,181,0.06)",
-            height: 64,
-            lineHeight: "64px",
-            position: "sticky",
-            top: 0,
-            zIndex: 99,
-          }}
-        >
-          {/* Left */}
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {!screens.md && (
-              <Button
-                type="text"
-                icon={<MenuOutlined />}
-                onClick={() => setDrawerOpen(true)}
-                style={{ color: "#616161", fontSize: 16, padding: "0 8px" }}
-              />
-            )}
-            <div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: "#212121" }}>
-                {currentPage}
-              </div>
-            </div>
+      {/* ── Main ── */}
+      <div className="cms-main" style={{ marginLeft: mainOffset }}>
+        <header className="cms-header">
+          {!showRail && (
+            <IconButton label="Open menu" onClick={() => setDrawerOpen(true)}>
+              <MenuOutlined />
+            </IconButton>
+          )}
+          <div className="cms-brand">
+            {!showRail && <img src={image} alt="" style={{ height: 26 }} />}
+            <b>
+              nearwe<span>cms</span>
+            </b>
           </div>
 
-          {/* Right */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {/* Notification bell */}
-            <Button
-              type="text"
-              style={{
-                width: 36,
-                height: 36,
-                padding: 0,
-                borderRadius: 10,
-                color: "#616161",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-              icon={<BellOutlined style={{ fontSize: 16 }} />}
-            />
+          {showTabs && (
+            <div className="cms-header-nav">
+              <nav className="cms-pill-tabs" aria-label="Sections">
+                {menuItems.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    className={`cms-pill-tab ${selectedKey === item.key ? "is-active" : ""}`}
+                    aria-current={selectedKey === item.key ? "page" : undefined}
+                    onClick={() => go(item.key)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </nav>
+            </div>
+          )}
 
-            {/* Divider */}
-            <div style={{ width: 1, height: 24, background: "#f0e3e3" }} />
-
-            {/* User popover */}
+          <div className="cms-header-right">
+            <Tooltip title="Announcements">
+              <IconButton label="Announcements" onClick={() => go("/announcements")}>
+                <BellOutlined />
+              </IconButton>
+            </Tooltip>
             <Popover
-              content={<AdminPopover onLogout={handleLogout} />}
+              open={accountOpen}
+              onOpenChange={setAccountOpen}
+              content={<AccountMenu name={name} email={email} onLogout={handleLogout} />}
               trigger="click"
               placement="bottomRight"
               arrow={false}
-              styles={{
-                root: { paddingTop: 8 },
-                body: {
-                  borderRadius: 12,
-                  boxShadow: "0 8px 32px rgba(63,81,181,0.14), 0 2px 8px rgba(63,81,181,0.08)",
-                  border: "1px solid #E3E6F0",
-                  padding: 0,
-                  overflow: "hidden",
-                },
-              }}
             >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  cursor: "pointer",
-                  padding: "6px 10px",
-                  borderRadius: 10,
-                  border: "1px solid #E3E6F0",
-                  background: "#FAFAFA",
-                  transition: "all 0.15s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "#F0F2FA";
-                  e.currentTarget.style.borderColor = "#C5CAE9";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "#FAFAFA";
-                  e.currentTarget.style.borderColor = "#E3E6F0";
-                }}
-              >
-                <Avatar
-                  size={28}
-                  style={{
-                    background: `linear-gradient(135deg, ${INDIGO}, ${INDIGO_DARK})`,
-                    fontSize: 11,
-                    fontWeight: 700,
-                    flexShrink: 0,
-                  }}
-                  icon={<UserOutlined />}
-                />
-                {screens.md && (
-                  <div style={{ lineHeight: 1.25 }}>
-                    <div style={{ color: "#212121", fontSize: 12, fontWeight: 600 }}>
-                      Admin User
-                    </div>
-                    <div style={{ color: "#9E9E9E", fontSize: 10 }}>
-                      admin@example.com
-                    </div>
+              {screens.sm ? (
+                <button type="button" className="cms-user-chip" aria-label="Account">
+                  <Avatar size={34} style={{ background: "var(--wy-navy)", fontWeight: 700, fontSize: 12 }}>
+                    {initials(name, email)}
+                  </Avatar>
+                  <div>
+                    <div className="name">{name}</div>
+                    <div className="mail">{email}</div>
                   </div>
-                )}
-              </div>
+                </button>
+              ) : (
+                <IconButton label="Account">
+                  <UserOutlined />
+                </IconButton>
+              )}
             </Popover>
           </div>
-        </Header>
+        </header>
 
-        {/* ── Content ── */}
-        <Content
-          style={{
-            margin: 24,
-            minHeight: "calc(100vh - 112px)",
-          }}
-        >
+        <main className="cms-content" key={selectedKey}>
           <Outlet />
-        </Content>
-      </Layout>
-    </Layout>
+        </main>
+      </div>
+    </div>
   );
 };
 

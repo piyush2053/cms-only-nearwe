@@ -1,17 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import {
-  Card,
-  Table,
-  Button,
-  Modal,
-  Form,
-  Input,
-  message,
-  Space,
-  Popconfirm,
-  Typography,
-  Progress,
-} from "antd";
+import { Table, Button, Modal, Form, Input, message, Space, Popconfirm, Typography, Progress } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import {
   CalendarOutlined,
@@ -23,6 +11,9 @@ import {
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { core_services } from "../../utils/api";
+import { CMS_COLORS } from "../cmstheme";
+import { Page, PageHeader, Surface, EmptyState, IconButton, Chip } from "../../components/ui";
+import { useAsyncAction, useKeyedAction } from "../../hooks/useAsyncAction";
 
 const { Text } = Typography;
 
@@ -56,37 +47,35 @@ const getEventDuration = (start?: string | null, end?: string | null) => {
   return { start: s, end: e, remainingMinutes, progress, isEnded: false };
 };
 
+const Bar: React.FC<{ pct: number; color: string }> = ({ pct, color }) => (
+  <div style={{ height: 4, borderRadius: 99, background: CMS_COLORS.light, overflow: "hidden", margin: "5px 0 4px" }}>
+    <div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 99 }} />
+  </div>
+);
+
 // ─── Duration Cell ────────────────────────────────────────────────────────────
 const DurationCell: React.FC<{ record: EventItem }> = ({ record }) => {
   const d: any = getEventDuration(record.startDateTime, record.endDateTime);
 
   if (d.invalid) {
-    return (
-      <span style={{ fontSize: 11, color: "#9AA3B0", fontStyle: "italic" }}>No schedule</span>
-    );
+    return <Text style={{ fontSize: 11, color: CMS_COLORS.textMuted, fontStyle: "italic" }}>No schedule</Text>;
   }
   if (d.isEnded) {
-    return (
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "#9AA3B0", fontWeight: 500 }}>
-        Ended
-      </span>
-    );
+    return <Chip tone="neutral">Ended</Chip>;
   }
 
   const color =
-    d.progress > 66 ? "#1B6EF3"
-    : d.progress > 33 ? "#F59E0B"
-    : "#C0392B";
+    d.progress > 66 ? CMS_COLORS.primary
+    : d.progress > 33 ? CMS_COLORS.warning
+    : CMS_COLORS.danger;
 
   return (
-    <div style={{ minWidth: 160 }}>
-      <Text style={{ fontSize: 11, color: "#374151", display: "block", marginBottom: 4 }}>
+    <div style={{ minWidth: 170 }}>
+      <Text style={{ fontSize: 12, color: CMS_COLORS.navy, fontWeight: 500, display: "block" }}>
         Ends {d.end.format("DD MMM · hh:mm A")}
       </Text>
-      <div style={{ height: 3, borderRadius: 2, background: "#F0F2F5", overflow: "hidden", marginBottom: 3 }}>
-        <div style={{ height: "100%", width: `${d.progress}%`, background: color, borderRadius: 2 }} />
-      </div>
-      <Text style={{ fontSize: 10, color: "#9AA3B0" }}>
+      <Bar pct={d.progress} color={color} />
+      <Text style={{ fontSize: 10, color: CMS_COLORS.textMuted }}>
         {Math.floor(d.remainingMinutes / 60)}h {d.remainingMinutes % 60}m remaining
       </Text>
     </div>
@@ -95,25 +84,21 @@ const DurationCell: React.FC<{ record: EventItem }> = ({ record }) => {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 const EventManagement: React.FC = () => {
-  
-  const cancelRef   = useRef(false);
+  const cancelRef = useRef(false);
 
-  const [events, setEvents]               = useState<EventItem[]>([]);
-  const [loading, setLoading]             = useState(false);
-  const [search, setSearch]               = useState("");
+  const [events, setEvents]                   = useState<EventItem[]>([]);
+  const [loaded, setLoaded]                   = useState(false);
+  const [search, setSearch]                   = useState("");
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
-  const [bulkDeleting, setBulkDeleting]   = useState(false);
-  const [bulkProgress, setBulkProgress]   = useState(0);
-  const [open, setOpen]                   = useState(false);
-  const [submitting, setSubmitting]       = useState(false);
-  const [editingEvent, setEditingEvent]   = useState<EventItem | null>(null);
+  const [bulkProgress, setBulkProgress]       = useState(0);
+  const [open, setOpen]                       = useState(false);
+  const [editingEvent, setEditingEvent]       = useState<EventItem | null>(null);
   const [form] = Form.useForm();
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
-  const fetchEvents = async () => {
-    setLoading(true);
+  const [fetchEvents, loading] = useAsyncAction(async () => {
     try {
-      const res     = await core_services.getAllEvents();
+      const res = await core_services.getAllEvents();
       const mapped: EventItem[] = res.map((item: any) => ({
         id:             item.EventID,
         eventTitle:     item.EventTitle,
@@ -133,17 +118,29 @@ const EventManagement: React.FC = () => {
     } catch {
       message.error("Failed to load events");
     } finally {
-      setLoading(false);
+      setLoaded(true);
     }
-  };
+  }, { queue: true });
 
-  useEffect(() => { fetchEvents(); }, []);
+  useEffect(() => {
+    void fetchEvents();
+  }, [fetchEvents]);
 
   // ── CRUD ───────────────────────────────────────────────────────────────────
-  const handleSubmit = async () => {
+  const handleClose = () => {
+    setOpen(false);
+    setEditingEvent(null);
+    form.resetFields();
+  };
+
+  const [handleSubmit, submitting] = useAsyncAction(async () => {
+    let values: any;
     try {
-      const values = await form.validateFields();
-      setSubmitting(true);
+      values = await form.validateFields();
+    } catch {
+      return; // inline field errors are shown by the form
+    }
+    try {
       if (editingEvent) {
         await core_services.updateEvent(editingEvent.id, values);
         message.success("Event updated");
@@ -152,13 +149,11 @@ const EventManagement: React.FC = () => {
         message.success("Event created");
       }
       handleClose();
-      fetchEvents();
+      await fetchEvents();
     } catch (err: any) {
       message.error(err?.message || "Something went wrong");
-    } finally {
-      setSubmitting(false);
     }
-  };
+  });
 
   const handleEdit = (record: EventItem) => {
     setEditingEvent(record);
@@ -166,37 +161,41 @@ const EventManagement: React.FC = () => {
     setOpen(true);
   };
 
-  const handleDelete = async (id: string) => {
+  const openCreate = () => {
+    form.resetFields();
+    setEditingEvent(null);
+    setOpen(true);
+  };
+
+  const remove = useKeyedAction(async (id: string) => {
     try {
       await core_services.deleteEvent(id);
       message.success("Event deleted");
-      fetchEvents();
+      await fetchEvents();
     } catch {
       message.error("Delete failed");
     }
-  };
-
-  const handleClose = () => {
-    setOpen(false);
-    setEditingEvent(null);
-    form.resetFields();
-  };
+  });
 
   // ── Bulk delete ────────────────────────────────────────────────────────────
-  const handleBulkDelete = async () => {
-    setBulkDeleting(true);
+  const [handleBulkDelete, bulkDeleting] = useAsyncAction(async () => {
     cancelRef.current = false;
-    const total = selectedRowKeys.length;
-    for (let i = 0; i < total; i++) {
-      if (cancelRef.current) break;
-      await core_services.deleteEvent(selectedRowKeys[i] as string);
-      setBulkProgress(Math.round(((i + 1) / total) * 100));
+    const keys  = [...selectedRowKeys];
+    const total = keys.length;
+    try {
+      for (let i = 0; i < total; i++) {
+        if (cancelRef.current) break;
+        await core_services.deleteEvent(keys[i] as string);
+        setBulkProgress(Math.round(((i + 1) / total) * 100));
+      }
+    } catch {
+      message.error("Delete failed");
+    } finally {
+      setSelectedRowKeys([]);
+      await fetchEvents();
+      setBulkProgress(0);
     }
-    setBulkDeleting(false);
-    setBulkProgress(0);
-    setSelectedRowKeys([]);
-    fetchEvents();
-  };
+  });
 
   // ── Filter ─────────────────────────────────────────────────────────────────
   const filteredEvents = events.filter((e) =>
@@ -210,49 +209,35 @@ const EventManagement: React.FC = () => {
   const columns: ColumnsType<EventItem> = [
     {
       title: "Event",
-      render: (_: any, record: EventItem) => (
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-          <div
-            style={{
-              width: 34,
-              height: 34,
-              borderRadius: 8,
-              background: "#EEF2F9",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-              marginTop: 1,
-            }}
-          >
-            <CalendarOutlined style={{ color: "#1B6EF3", fontSize: 14 }} />
-          </div>
-          <div>
-            <Text style={{ fontSize: 13, fontWeight: 600, color: "#1F2937", display: "block" }}>
+      render: (_: unknown, record: EventItem) => (
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span className="cms-icon-tile is-sm">
+            <CalendarOutlined />
+          </span>
+          <div style={{ minWidth: 0 }}>
+            <Text style={{ fontSize: 13, fontWeight: 600, color: CMS_COLORS.navy, display: "block" }}>
               {record.eventTitle}
             </Text>
-            <Text style={{ fontSize: 11, color: "#9AA3B0" }}>{record.location || "—"}</Text>
+            <Text style={{ fontSize: 11, color: CMS_COLORS.textMuted }}>{record.location || "—"}</Text>
           </div>
         </div>
       ),
     },
     {
       title: "Timeline",
-      render: (_: any, record: EventItem) => <DurationCell record={record} />,
+      render: (_: unknown, record: EventItem) => <DurationCell record={record} />,
     },
     {
       title: "Capacity",
-      render: (_: any, record: EventItem) => {
+      render: (_: unknown, record: EventItem) => {
         const filled = record.maxAttendent - record.currentVacany;
         const pct    = record.maxAttendent ? Math.round((filled / record.maxAttendent) * 100) : 0;
         return (
-          <div style={{ minWidth: 100 }}>
-            <Text style={{ fontSize: 12, color: "#374151" }}>
+          <div style={{ minWidth: 110 }}>
+            <Text style={{ fontSize: 12, color: CMS_COLORS.navy, fontWeight: 500 }}>
               {filled} / {record.maxAttendent}
             </Text>
-            <div style={{ height: 3, borderRadius: 2, background: "#F0F2F5", marginTop: 4, overflow: "hidden" }}>
-              <div style={{ height: "100%", width: `${pct}%`, background: pct > 80 ? "#C0392B" : "#1B6EF3", borderRadius: 2 }} />
-            </div>
+            <Bar pct={pct} color={pct > 80 ? CMS_COLORS.danger : CMS_COLORS.primary} />
           </div>
         );
       },
@@ -260,91 +245,84 @@ const EventManagement: React.FC = () => {
     {
       title: "Status",
       dataIndex: "status",
-      render: (status: number) => (
-        <span
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-            padding: "2px 8px",
-            borderRadius: 4,
-            fontSize: 11,
-            fontWeight: 600,
-            background: status === 1 ? "#E6F4EF" : "#F0F2F5",
-            color:      status === 1 ? "#0D7A4E"  : "#9AA3B0",
-          }}
-        >
-          <span style={{ width: 5, height: 5, borderRadius: "50%", background: status === 1 ? "#0D7A4E" : "#9AA3B0", display: "inline-block" }} />
-          {status === 1 ? "Active" : "Inactive"}
-        </span>
-      ),
+      render: (status: number) =>
+        status === 1 ? <Chip tone="success">Active</Chip> : <Chip tone="neutral">Inactive</Chip>,
     },
     {
       title: "",
-      width: 120,
-      render: (_: any, record: EventItem) => (
-        <Space size={4}>
-          <Button
-            type="text"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => handleEdit(record)}
-            style={{ color: "#1B6EF3", borderRadius: 5, fontSize: 12 }}
-          >
-            Edit
-          </Button>
-          <Popconfirm title="Delete this event?" onConfirm={() => handleDelete(record.id)} okButtonProps={{ danger: true, size: "small" }} cancelButtonProps={{ size: "small" }}>
-            <Button type="text" size="small" icon={<DeleteOutlined />} danger style={{ borderRadius: 5, fontSize: 12 }}>
-              Delete
+      width: 190,
+      align: "right",
+      render: (_: unknown, record: EventItem) => {
+        const deleting = remove.isPending(record.id);
+        return (
+          <Space size={6}>
+            <Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)} disabled={deleting}>
+              Edit
             </Button>
-          </Popconfirm>
-        </Space>
-      ),
+            <Popconfirm
+              title="Delete this event?"
+              onConfirm={() => remove.run(record.id)}
+              okButtonProps={{ danger: true, size: "small" }}
+              cancelButtonProps={{ size: "small" }}
+              disabled={deleting}
+            >
+              <Button size="small" icon={<DeleteOutlined />} danger loading={deleting}>
+                Delete
+              </Button>
+            </Popconfirm>
+          </Space>
+        );
+      },
     },
   ];
 
   return (
-    <>
-      <Card
-        style={{ borderRadius: 8, border: "1px solid #E4E7EC", boxShadow: "0 1px 4px rgba(8,22,56,0.06)" }}
-        styles={{ header: { borderBottom: "1px solid #F0F2F5", padding: "0 20px", minHeight: 52 }, body: { padding: 0 } }}
-        title={
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <Text style={{ fontSize: 14, fontWeight: 700, color: "#1F2937" }}>Event Management</Text>
-            <span style={{ background: "#E8F0FE", color: "#1B6EF3", fontSize: 11, fontWeight: 700, padding: "1px 7px", borderRadius: 12 }}>
-              {filteredEvents.length}
-            </span>
-          </div>
+    <Page>
+      <PageHeader
+        title="Event Management"
+        subtitle="Review, edit and tidy up every event published on the platform."
+        actions={
+          <>
+            <IconButton
+              label="Refresh events"
+              onClick={() => void fetchEvents()}
+              disabled={loading}
+              aria-busy={loading}
+            >
+              <ReloadOutlined spin={loading} />
+            </IconButton>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+              Create Event
+            </Button>
+          </>
         }
+      />
+
+      <Surface
+        title="All events"
+        icon={<CalendarOutlined />}
+        count={filteredEvents.length}
+        bodyStyle={{ padding: 0 }}
         extra={
-          <Space size={8}>
+          <>
             {selectedRowKeys.length > 0 && (
               <Button
                 danger
-                size="small"
-                onClick={handleBulkDelete}
-                style={{ borderRadius: 6, fontSize: 12 }}
+                icon={<DeleteOutlined />}
+                onClick={() => void handleBulkDelete()}
+                loading={bulkDeleting}
               >
                 Delete {selectedRowKeys.length} selected
               </Button>
             )}
             <Input
-              prefix={<SearchOutlined style={{ color: "#CDD2DB", fontSize: 13 }} />}
+              prefix={<SearchOutlined style={{ color: CMS_COLORS.silver }} />}
               placeholder="Search events..."
               allowClear
               onChange={(e) => setSearch(e.target.value)}
-              style={{ width: 200, borderRadius: 6, fontSize: 12 }}
+              style={{ width: 240, maxWidth: "100%" }}
             />
-            <Button icon={<ReloadOutlined />} onClick={fetchEvents} loading={loading} style={{ borderRadius: 6 }} />
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() => { form.resetFields(); setEditingEvent(null); setOpen(true); }}
-              style={{ borderRadius: 6, background: "#1B6EF3" }}
-            >
-              Create Event
-            </Button>
-          </Space>
+          </>
         }
       >
         <Table
@@ -353,64 +331,81 @@ const EventManagement: React.FC = () => {
           dataSource={filteredEvents}
           columns={columns}
           size="middle"
-          rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
+          rowSelection={{
+            selectedRowKeys,
+            onChange: setSelectedRowKeys,
+            getCheckboxProps: () => ({ disabled: bulkDeleting }),
+          }}
+          rowClassName={(r) => (remove.isPending(r.id) ? "cms-row-busy" : "")}
+          locale={{
+            emptyText:
+              loading || !loaded ? (
+                <div style={{ height: 160 }} />
+              ) : (
+                <EmptyState
+                  title={search ? "No matching events" : "No events yet"}
+                  description={search ? "Try a different search term." : "Create an event to get started."}
+                  icon={<CalendarOutlined />}
+                />
+              ),
+          }}
           pagination={{
             pageSize: 10,
             showSizeChanger: false,
-            showTotal: (total) => <Text style={{ fontSize: 11, color: "#9AA3B0" }}>{total} events</Text>,
+            showTotal: (total) => <Text style={{ fontSize: 11, color: CMS_COLORS.textMuted }}>{total} events</Text>,
           }}
-          rowClassName={() => "cms-table-row"}
-          scroll={{ x: 700 }}
+          scroll={{ x: "max-content" }}
         />
-      </Card>
+      </Surface>
+
+      <style>{`.cms-row-busy > td { opacity: .5; transition: opacity .2s; }`}</style>
 
       {/* Bulk delete progress */}
-      <Modal
-        open={bulkDeleting}
-        footer={null}
-        closable={false}
-        width={380}
-        styles={{ body: { padding: 24 } }}
-      >
-        <Text style={{ fontSize: 13, fontWeight: 600, display: "block", marginBottom: 12 }}>
-          Deleting events...
-        </Text>
-        <Progress percent={bulkProgress} strokeColor="#1B6EF3" trailColor="#F0F2F5" />
-        <Button danger block onClick={() => { cancelRef.current = true; message.warning("Cancelled"); }} style={{ marginTop: 12, borderRadius: 6 }}>
+      <Modal open={bulkDeleting} footer={null} closable={false} maskClosable={false} keyboard={false} width={380}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+          <span className="cms-icon-tile is-sm" style={{ background: CMS_COLORS.dangerBg, color: CMS_COLORS.danger }}>
+            <DeleteOutlined />
+          </span>
+          <Text style={{ fontSize: 14, fontWeight: 700, color: CMS_COLORS.navy }}>Deleting events...</Text>
+        </div>
+        <Progress percent={bulkProgress} strokeColor={CMS_COLORS.primary} trailColor={CMS_COLORS.light} />
+        <Button
+          danger
+          block
+          onClick={() => { cancelRef.current = true; message.warning("Cancelled"); }}
+          style={{ marginTop: 14 }}
+        >
           Cancel
         </Button>
       </Modal>
 
       {/* Create / Edit modal */}
       <Modal
-        title={
-          <div style={{ fontSize: 14, fontWeight: 700, color: "#1F2937" }}>
-            {editingEvent ? "Edit Event" : "Create Event"}
-          </div>
-        }
+        title={editingEvent ? "Edit Event" : "Create Event"}
         open={open}
-        onOk={handleSubmit}
+        onOk={() => void handleSubmit()}
         onCancel={handleClose}
         confirmLoading={submitting}
         okText={editingEvent ? "Save Changes" : "Create"}
-        okButtonProps={{ style: { background: "#1B6EF3", borderRadius: 6 } }}
-        cancelButtonProps={{ style: { borderRadius: 6 } }}
+        cancelButtonProps={{ disabled: submitting }}
+        maskClosable={!submitting}
+        closable={!submitting}
+        keyboard={!submitting}
         width={480}
-        styles={{ body: { paddingTop: 16 } }}
       >
-        <Form layout="vertical" form={form}>
-          <Form.Item label={<span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>Event Title</span>} name="eventTitle" rules={[{ required: true }]}>
-            <Input style={{ borderRadius: 6 }} />
+        <Form layout="vertical" form={form} disabled={submitting}>
+          <Form.Item label="Event Title" name="eventTitle" rules={[{ required: true }]}>
+            <Input />
           </Form.Item>
-          <Form.Item label={<span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>Description</span>} name="eventDesc" rules={[{ required: true }]}>
-            <Input.TextArea rows={3} style={{ borderRadius: 6, resize: "none" }} />
+          <Form.Item label="Description" name="eventDesc" rules={[{ required: true }]}>
+            <Input.TextArea rows={3} style={{ resize: "none" }} />
           </Form.Item>
-          <Form.Item label={<span style={{ fontSize: 12, fontWeight: 600, color: "#374151" }}>Location</span>} name="location" rules={[{ required: true }]}>
-            <Input style={{ borderRadius: 6 }} />
+          <Form.Item label="Location" name="location" rules={[{ required: true }]}>
+            <Input />
           </Form.Item>
         </Form>
       </Modal>
-    </>
+    </Page>
   );
 };
 

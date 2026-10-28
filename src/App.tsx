@@ -1,4 +1,4 @@
-import { ConfigProvider, Layout } from "antd";
+import { ConfigProvider } from "antd";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import CmsHome from "./cms/cms_home";
 import AppManagement from "./cms/pages/AppManagement";
@@ -24,8 +24,7 @@ function App() {
         <UserProvider>
           <NotificationProvider>
             <BrowserRouter>
-              <Layout className="min-h-screen">
-                <Layout.Content>
+              <div className="min-h-screen">
                   <Routes>
                     <Route path="/login" element={<Login />} />
                     <Route
@@ -48,8 +47,7 @@ function App() {
                     </Route>
                     <Route path="*" element={<Navigate to="/" replace />} />
                   </Routes>
-                </Layout.Content>
-              </Layout>
+              </div>
             </BrowserRouter>
           </NotificationProvider>
         </UserProvider>

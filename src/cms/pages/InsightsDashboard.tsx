@@ -1,24 +1,18 @@
 import React, { useEffect, useState } from "react";
-import {
-  Card,
-  Col,
-  Row,
-  Statistic,
-  message,
-  Spin,
-  Typography,
-  Tag,
-} from "antd";
-import type { StatisticProps } from "antd";
+import { Col, Row, Skeleton, message } from "antd";
 import {
   AppstoreOutlined,
+  AreaChartOutlined,
+  BarChartOutlined,
   CalendarOutlined,
   CheckCircleOutlined,
-  LoadingOutlined,
+  FieldTimeOutlined,
+  PieChartOutlined,
+  ReloadOutlined,
   RiseOutlined,
   TeamOutlined,
 } from "@ant-design/icons";
-import CountUp from "react-countup";
+import CountUpImport from "react-countup";
 import { core_services } from "../../utils/api";
 import dayjs from "dayjs";
 import {
@@ -36,11 +30,22 @@ import {
   BarChart,
   Bar,
 } from "recharts";
+import { Chip, EmptyState, IconButton, Page, PageHeader, StatCard, Surface } from "../../components/ui";
+import { useAsyncAction } from "../../hooks/useAsyncAction";
+import { CMS_COLORS } from "../cmstheme";
 
-const { Text } = Typography;
+// CommonJS interop can wrap react-countup's component in a default export object.
+const CountUp = typeof CountUpImport === "function"
+  ? CountUpImport
+  : (CountUpImport as unknown as { default: typeof CountUpImport }).default;
 
-const INDIGO      = "#3F51B5";
-const INDIGO_LIGHT = "#E8EAF6";
+// Chart palette (Wayyo)
+const COBALT   = CMS_COLORS.primary;   // #3559C7
+const NAVY     = CMS_COLORS.navy;      // #202A40
+const PERIWINKLE = "#7F9BF0";
+const SILVER   = CMS_COLORS.silver;    // #C0C7D4
+const GRID     = "#EDF0F6";
+const AXIS_TICK = { fontSize: 11, fill: CMS_COLORS.textMuted };
 
 interface EventItem {
   EventID: string;
@@ -50,114 +55,71 @@ interface EventItem {
   Status: number;
 }
 
-interface StatCardProps {
-  title: string;
-  value: number;
-  icon: React.ReactNode;
-  color: string;
-  bgColor: string;
-  delta?: string;
+interface TooltipEntry {
+  dataKey?: string | number;
+  name?: string | number;
+  value?: number | string;
+  color?: string;
+  payload?: { color?: string; fill?: string };
 }
 
-const StatCard: React.FC<StatCardProps> = ({ title, value, icon, color, bgColor, delta }) => {
-  const formatter: StatisticProps["formatter"] = (v) => (
-    <CountUp end={Number(v) || 0} duration={1.2} separator="," />
-  );
-
-  return (
-    <Card
-      className="cms-stat-card"
-      style={{
-        borderRadius: 16,
-        border: "1px solid #E3E6F0",
-        boxShadow: "0 2px 12px rgba(63,81,181,0.08)",
-      }}
-      styles={{ body: { padding: "20px 24px" } }}
-    >
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-        <div>
-          <div style={{
-            fontSize: 11,
-            fontWeight: 700,
-            color: "#9E9E9E",
-            letterSpacing: "0.07em",
-            textTransform: "uppercase",
-            marginBottom: 8,
-          }}>
-            {title}
-          </div>
-          <Statistic
-            value={value}
-            formatter={formatter}
-            valueStyle={{ fontSize: 28, fontWeight: 700, color: "#212121", lineHeight: 1.1 }}
-          />
-          {delta && (
-            <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 4 }}>
-              <RiseOutlined style={{ color: "#00897B", fontSize: 11 }} />
-              <Text style={{ color: "#00897B", fontSize: 11, fontWeight: 600 }}>{delta} vs last month</Text>
-            </div>
-          )}
-        </div>
-        <div
-          style={{
-            width: 48,
-            height: 48,
-            borderRadius: 14,
-            background: bgColor,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 22,
-            color,
-            flexShrink: 0,
-          }}
-        >
-          {icon}
-        </div>
-      </div>
-    </Card>
-  );
-};
-
-const ChartTooltip = ({ active, payload, label }: any) => {
+const ChartTooltip = ({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean;
+  payload?: TooltipEntry[];
+  label?: string | number;
+}) => {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{
-      background: "#fff",
-      border: "1px solid #E3E6F0",
-      borderRadius: 10,
-      padding: "10px 14px",
-      boxShadow: "0 4px 16px rgba(63,81,181,0.12)",
-      fontSize: 12,
-    }}>
-      <div style={{ fontWeight: 700, color: "#424242", marginBottom: 6 }}>{label}</div>
-      {payload.map((p: any) => (
-        <div key={p.dataKey} style={{ color: p.color, display: "flex", gap: 10 }}>
-          <span style={{ textTransform: "capitalize" }}>{p.dataKey}:</span>
-          <span style={{ fontWeight: 700 }}>{p.value}</span>
+    <div className="dash-tooltip">
+      {label !== undefined && <div className="dash-tooltip-title">{label}</div>}
+      {payload.map((p) => (
+        <div key={String(p.dataKey ?? p.name)} className="dash-tooltip-row">
+          <span className="dash-tooltip-dot" style={{ background: p.color ?? p.payload?.color ?? p.payload?.fill }} />
+          <span className="dash-tooltip-key">{p.name ?? p.dataKey}</span>
+          <b>{p.value}</b>
         </div>
       ))}
     </div>
   );
 };
 
-const cardStyle = {
-  borderRadius: 16,
-  border: "1px solid #E3E6F0",
-  boxShadow: "0 2px 12px rgba(63,81,181,0.08)",
-};
+const LegendText = (value: string) => (
+  <span style={{ color: CMS_COLORS.textSecondary, fontSize: 12, fontWeight: 500, textTransform: "capitalize" }}>
+    {value}
+  </span>
+);
+
+const ChartSkeleton: React.FC<{ height: number }> = ({ height }) => (
+  <div style={{ height, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+    <Skeleton active title={false} paragraph={{ rows: 5, width: ["90%", "70%", "85%", "60%", "75%"] }} />
+  </div>
+);
+
+const Count: React.FC<{ value: number }> = ({ value }) => (
+  <CountUp end={Number(value) || 0} duration={1.2} separator="," />
+);
+
+const DeltaHint: React.FC<{ delta: string }> = ({ delta }) => (
+  <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+    <RiseOutlined style={{ color: CMS_COLORS.success }} />
+    <b style={{ color: CMS_COLORS.success, fontWeight: 600 }}>{delta}</b> vs last month
+  </span>
+);
 
 // ─── Component ────────────────────────────────────────────────────────────────
 const InsightsDashboard: React.FC = () => {
-  const [loading, setLoading]               = useState(true);
+  const [loaded, setLoaded]                 = useState(false);
   const [categoryCount, setCategoryCount]   = useState(0);
   const [eventCount, setEventCount]         = useState(0);
   const [activeEventCount, setActiveEventCount] = useState(0);
   const [usersCount, setUsersCount]         = useState(0);
   const [events, setEvents]                 = useState<EventItem[]>([]);
 
-  const fetchInsights = async () => {
-    setLoading(true);
+  const [fetchInsights, fetching] = useAsyncAction(async () => {
     try {
       const [categoriesRes, eventsRes, usersRes] = await Promise.all([
         core_services.getCategories(),
@@ -172,19 +134,13 @@ const InsightsDashboard: React.FC = () => {
     } catch {
       message.error("Failed to load dashboard data");
     } finally {
-      setLoading(false);
+      setLoaded(true);
     }
-  };
+  }, { queue: true });
 
-  useEffect(() => { fetchInsights(); }, []);
+  useEffect(() => { void fetchInsights(); }, [fetchInsights]);
 
-  if (loading) {
-    return (
-      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: 300 }}>
-        <Spin size="large" indicator={<LoadingOutlined style={{ color: INDIGO }} />} />
-      </div>
-    );
-  }
+  const loading = fetching || !loaded;
 
   const eventTrendData = [
     { month: "Jan", events: 65, capacity: 80 },
@@ -196,9 +152,9 @@ const InsightsDashboard: React.FC = () => {
   ];
 
   const eventStatusData = [
-    { name: "Active",    value: activeEventCount,               color: INDIGO },
-    { name: "Upcoming",  value: 28,                             color: "#7B1FA2" },
-    { name: "Completed", value: eventCount - activeEventCount,  color: "#00897B" },
+    { name: "Active",    value: activeEventCount,               color: COBALT },
+    { name: "Upcoming",  value: 28,                             color: PERIWINKLE },
+    { name: "Completed", value: eventCount - activeEventCount,  color: NAVY },
   ];
 
   const attendanceData = [
@@ -216,179 +172,209 @@ const InsightsDashboard: React.FC = () => {
     return { start, end, progress: Math.round(progress) };
   };
 
-  return (
-    <div>
-      {/* KPI Row */}
-      <Row gutter={[16, 16]}>
-        <Col xs={24} sm={12} md={6}>
-          <StatCard title="Total Categories" value={categoryCount}    icon={<AppstoreOutlined />}   color={INDIGO}    bgColor={INDIGO_LIGHT}  delta="+12%" />
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <StatCard title="Total Events"     value={eventCount}       icon={<CalendarOutlined />}   color="#7B1FA2"   bgColor="#F3E5F5"       delta="+8%" />
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <StatCard title="Active Events"    value={activeEventCount} icon={<CheckCircleOutlined />} color="#00897B"  bgColor="#E0F2F1" />
-        </Col>
-        <Col xs={24} sm={12} md={6}>
-          <StatCard title="Registered Users" value={usersCount}       icon={<TeamOutlined />}        color="#F57C00"  bgColor="#FFF3E0"       delta="+5%" />
-        </Col>
-      </Row>
+  const statusTotal = eventStatusData.reduce((s, d) => s + Math.max(d.value, 0), 0);
 
-      <div style={{ height: 20 }} />
+  return (
+    <Page>
+      <style>{`
+        .dash-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+        .dash-tooltip {
+          background: #fff; border: 1px solid var(--wy-line); border-radius: 14px;
+          padding: 10px 14px; box-shadow: var(--wy-shadow-float); font-size: 12px; min-width: 140px;
+        }
+        .dash-tooltip-title { font-weight: 700; color: var(--wy-navy); margin-bottom: 6px; }
+        .dash-tooltip-row { display: flex; align-items: center; gap: 8px; color: var(--wy-text-2); line-height: 1.8; }
+        .dash-tooltip-row b { margin-left: auto; color: var(--wy-navy); font-weight: 700; }
+        .dash-tooltip-key { text-transform: capitalize; }
+        .dash-tooltip-dot { width: 8px; height: 8px; border-radius: 99px; flex-shrink: 0; }
+        .dash-legend-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: 14px; background: var(--wy-light); }
+        .dash-legend-row + .dash-legend-row { margin-top: 8px; }
+        .dash-legend-dot { width: 10px; height: 10px; border-radius: 99px; flex-shrink: 0; }
+        .dash-activity { display: flex; align-items: center; gap: 14px; padding: 14px 4px; }
+        .dash-activity + .dash-activity { border-top: 1px solid var(--wy-line); }
+        .dash-activity-body { flex: 1; min-width: 0; }
+        .dash-activity-title { font-size: 13px; font-weight: 600; color: var(--wy-navy); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .dash-progress { height: 6px; border-radius: 99px; background: var(--wy-light); overflow: hidden; margin: 8px 0 6px; }
+        .dash-progress > span { display: block; height: 100%; border-radius: 99px; transition: width 0.6s var(--wy-ease); }
+        .dash-dates { display: flex; justify-content: space-between; font-size: 11px; color: var(--wy-muted); }
+        .dash-donut { position: relative; }
+        .dash-donut-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; }
+        .dash-donut-center b { font-size: 24px; font-weight: 700; color: var(--wy-navy); letter-spacing: -0.02em; line-height: 1; }
+        .dash-donut-center span { font-size: 11px; color: var(--wy-muted); margin-top: 4px; }      `}</style>
+
+      <PageHeader
+        title="Insights Dashboard"
+        subtitle="A live snapshot of categories, events and community activity."
+        actions={
+          <IconButton
+            label="Refresh dashboard"
+            title="Refresh"
+            onClick={() => void fetchInsights()}
+            disabled={loading}
+            aria-busy={loading}
+            style={loading ? { cursor: "progress" } : undefined}
+          >
+            <ReloadOutlined spin={loading} />
+          </IconButton>
+        }
+      />
+
+      {/* KPI Row */}
+      <div className="dash-stats">
+        <StatCard label="Total Categories" value={<Count value={categoryCount} />}    icon={<AppstoreOutlined />}    tone="primary" loading={loading} hint={<DeltaHint delta="+12%" />} />
+        <StatCard label="Total Events"     value={<Count value={eventCount} />}       icon={<CalendarOutlined />}    tone="navy"    loading={loading} hint={<DeltaHint delta="+8%" />} />
+        <StatCard label="Active Events"    value={<Count value={activeEventCount} />} icon={<CheckCircleOutlined />} tone="success" loading={loading} hint="Currently live" />
+        <StatCard label="Registered Users" value={<Count value={usersCount} />}       icon={<TeamOutlined />}        tone="warning" loading={loading} hint={<DeltaHint delta="+5%" />} />
+      </div>
 
       {/* Charts Row */}
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={16}>
-          <Card
-            title={<span style={{ fontSize: 14, fontWeight: 700, color: "#212121" }}>Event Growth Trend</span>}
-            style={cardStyle}
-            styles={{ body: { padding: "16px 20px" } }}
-          >
-            <ResponsiveContainer width="100%" height={260}>
-              <AreaChart data={eventTrendData} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="gradEvents" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="10%" stopColor={INDIGO} stopOpacity={0.20} />
-                    <stop offset="95%" stopColor={INDIGO} stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="gradCapacity" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="10%" stopColor="#7B1FA2" stopOpacity={0.14} />
-                    <stop offset="95%" stopColor="#7B1FA2" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F0F2FA" />
-                <XAxis dataKey="month" tick={{ fontSize: 11, fill: "#BDBDBD" }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: "#BDBDBD" }} axisLine={false} tickLine={false} />
-                <Tooltip content={<ChartTooltip />} />
-                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 14 }} />
-                <Area type="monotone" dataKey="events"   stroke={INDIGO}   fill="url(#gradEvents)"   strokeWidth={2.5} dot={false} />
-                <Area type="monotone" dataKey="capacity" stroke="#7B1FA2"  fill="url(#gradCapacity)" strokeWidth={2.5} dot={false} strokeDasharray="5 3" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </Card>
+          <Surface title="Event Growth Trend" icon={<AreaChartOutlined />} style={{ height: "100%" }} bodyStyle={{ padding: "18px 16px 14px 4px" }}>
+            {loading ? (
+              <div style={{ paddingLeft: 18 }}><ChartSkeleton height={280} /></div>
+            ) : (
+              <ResponsiveContainer width="100%" height={280}>
+                <AreaChart data={eventTrendData} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="gradEvents" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%"  stopColor={COBALT} stopOpacity={0.24} />
+                      <stop offset="95%" stopColor={COBALT} stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="gradCapacity" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%"  stopColor={NAVY} stopOpacity={0.08} />
+                      <stop offset="95%" stopColor={NAVY} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid stroke={GRID} vertical={false} />
+                  <XAxis dataKey="month" tick={AXIS_TICK} axisLine={false} tickLine={false} dy={6} />
+                  <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                  <Tooltip content={<ChartTooltip />} cursor={{ stroke: SILVER, strokeDasharray: "4 4" }} />
+                  <Legend iconType="circle" iconSize={8} formatter={LegendText} wrapperStyle={{ paddingTop: 12 }} />
+                  <Area type="monotone" dataKey="events"   stroke={COBALT} fill="url(#gradEvents)"   strokeWidth={2.5} dot={false} activeDot={{ r: 5, strokeWidth: 3, stroke: "#fff" }} />
+                  <Area type="monotone" dataKey="capacity" stroke={NAVY}   fill="url(#gradCapacity)" strokeWidth={2}   dot={false} strokeDasharray="5 4" activeDot={{ r: 4, strokeWidth: 3, stroke: "#fff" }} />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </Surface>
         </Col>
 
         <Col xs={24} lg={8}>
-          <Card
-            title={<span style={{ fontSize: 14, fontWeight: 700, color: "#212121" }}>Event Status</span>}
-            style={{ ...cardStyle, height: "100%" }}
-            styles={{ body: { padding: "16px 20px" } }}
-          >
-            <ResponsiveContainer width="100%" height={180}>
-              <PieChart>
-                <Pie data={eventStatusData} dataKey="value" innerRadius={54} outerRadius={82} strokeWidth={0}>
-                  {eventStatusData.map((e, i) => (
-                    <Cell key={i} fill={e.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(v, name) => [v, name]}
-                  contentStyle={{ borderRadius: 10, border: "1px solid #E3E6F0", fontSize: 12 }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
-              {eventStatusData.map((d) => (
-                <div key={d.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: 2, background: d.color, flexShrink: 0 }} />
-                    <Text style={{ fontSize: 12, color: "#757575" }}>{d.name}</Text>
+          <Surface title="Event Status" icon={<PieChartOutlined />} style={{ height: "100%" }} bodyStyle={{ padding: "18px 22px 22px" }}>
+            {loading ? (
+              <ChartSkeleton height={300} />
+            ) : (
+              <>
+                <div className="dash-donut">
+                  <ResponsiveContainer width="100%" height={190}>
+                    <PieChart>
+                      <Pie
+                        data={eventStatusData}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius={60}
+                        outerRadius={84}
+                        paddingAngle={3}
+                        cornerRadius={8}
+                        stroke="none"
+                      >
+                        {eventStatusData.map((e) => (
+                          <Cell key={e.name} fill={e.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<ChartTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="dash-donut-center">
+                    <b>{statusTotal}</b>
+                    <span>events</span>
                   </div>
-                  <Text style={{ fontSize: 12, fontWeight: 700, color: "#212121" }}>{d.value}</Text>
                 </div>
-              ))}
-            </div>
-          </Card>
+                <div style={{ marginTop: 12 }}>
+                  {eventStatusData.map((d) => (
+                    <div key={d.name} className="dash-legend-row">
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span className="dash-legend-dot" style={{ background: d.color }} />
+                        <span style={{ fontSize: 12, color: CMS_COLORS.textSecondary, fontWeight: 500 }}>{d.name}</span>
+                      </div>
+                      <b style={{ fontSize: 13, color: CMS_COLORS.navy }}>{d.value}</b>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </Surface>
         </Col>
       </Row>
-
-      <div style={{ height: 16 }} />
 
       <Row gutter={[16, 16]}>
         {/* Attendance */}
         <Col xs={24} lg={12}>
-          <Card
-            title={<span style={{ fontSize: 14, fontWeight: 700, color: "#212121" }}>Attendance Analysis</span>}
-            style={cardStyle}
-            styles={{ body: { padding: "16px 20px" } }}
-          >
-            <ResponsiveContainer width="100%" height={240}>
-              <BarChart data={attendanceData} margin={{ top: 4, right: 8, left: -16, bottom: 0 }} barSize={18} barGap={4}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F0F2FA" vertical={false} />
-                <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#BDBDBD" }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: "#BDBDBD" }} axisLine={false} tickLine={false} />
-                <Tooltip content={<ChartTooltip />} />
-                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 14 }} />
-                <Bar dataKey="attended"   fill={INDIGO}   radius={[4, 4, 0, 0]} />
-                <Bar dataKey="registered" fill="#E8EAF6"  radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </Card>
+          <Surface title="Attendance Analysis" icon={<BarChartOutlined />} style={{ height: "100%" }} bodyStyle={{ padding: "18px 16px 14px 4px" }}>
+            {loading ? (
+              <div style={{ paddingLeft: 18 }}><ChartSkeleton height={260} /></div>
+            ) : (
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={attendanceData} margin={{ top: 8, right: 8, left: -12, bottom: 0 }} barSize={22} barGap={6}>
+                  <CartesianGrid stroke={GRID} vertical={false} />
+                  <XAxis dataKey="name" tick={AXIS_TICK} axisLine={false} tickLine={false} dy={6} />
+                  <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                  <Tooltip content={<ChartTooltip />} cursor={{ fill: CMS_COLORS.light }} />
+                  <Legend iconType="circle" iconSize={8} formatter={LegendText} wrapperStyle={{ paddingTop: 12 }} />
+                  <Bar dataKey="attended"   fill={COBALT} radius={[8, 8, 8, 8]} />
+                  <Bar dataKey="registered" fill={SILVER} radius={[8, 8, 8, 8]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </Surface>
         </Col>
 
         {/* Event Life Tracker */}
         <Col xs={24} lg={12}>
-          <Card
-            title={<span style={{ fontSize: 14, fontWeight: 700, color: "#212121" }}>Event Lifecycle</span>}
-            style={cardStyle}
-            styles={{ body: { padding: "16px 20px" } }}
+          <Surface
+            title="Event Lifecycle"
+            icon={<FieldTimeOutlined />}
+            count={loading ? undefined : Math.min(events.length, 3)}
+            style={{ height: "100%" }}
+            bodyStyle={{ padding: "6px 22px 10px" }}
           >
-            {events.slice(0, 3).map((e) => {
-              const life = getEventLife(e.EventTime);
-              const progressColor = life.progress < 50 ? INDIGO : life.progress < 80 ? "#F57C00" : "#E53935";
-              return (
-                <div
-                  key={e.EventID}
-                  style={{
-                    padding: "14px 16px",
-                    borderRadius: 12,
-                    border: "1px solid #E3E6F0",
-                    marginBottom: 10,
-                    background: "#FAFBFF",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-                    <Text style={{ fontSize: 13, fontWeight: 600, color: "#212121" }}>{e.EventTitle}</Text>
-                    <Tag
-                      style={{
-                        fontSize: 10,
-                        borderRadius: 20,
-                        background: life.progress < 50 ? "#E0F2F1" : life.progress < 80 ? "#FFF3E0" : "#FFEBEE",
-                        color:      life.progress < 50 ? "#00897B" : life.progress < 80 ? "#F57C00" : "#E53935",
-                        border:     "none",
-                        fontWeight: 700,
-                      }}
-                    >
-                      {life.progress}%
-                    </Tag>
-                  </div>
-                  <div style={{ height: 5, borderRadius: 3, background: "#E3E6F0", overflow: "hidden", marginBottom: 6 }}>
-                    <div
-                      style={{
-                        height: "100%",
-                        width: `${life.progress}%`,
-                        background: progressColor,
-                        borderRadius: 3,
-                        transition: "width 0.6s ease",
-                      }}
-                    />
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <Text style={{ fontSize: 10, color: "#BDBDBD" }}>{life.start.format("DD MMM")}</Text>
-                    <Text style={{ fontSize: 10, color: "#BDBDBD" }}>{life.end.format("DD MMM")}</Text>
-                  </div>
-                </div>
-              );
-            })}
-            {events.length === 0 && (
-              <div style={{ textAlign: "center", padding: "32px 0", color: "#BDBDBD", fontSize: 13 }}>
-                No events to display
+            {loading ? (
+              <div style={{ padding: "12px 0" }}>
+                {[0, 1, 2].map((i) => (
+                  <Skeleton key={i} active avatar={{ shape: "square", size: 40 }} title={{ width: "50%" }} paragraph={{ rows: 1, width: "90%" }} style={{ marginBottom: 12 }} />
+                ))}
               </div>
+            ) : events.length === 0 ? (
+              <EmptyState title="No events to display" icon={<CalendarOutlined />} />
+            ) : (
+              events.slice(0, 3).map((e) => {
+                const life = getEventLife(e.EventTime);
+                const tone = life.progress < 50 ? "primary" : life.progress < 80 ? "warning" : "danger";
+                const progressColor = tone === "primary" ? COBALT : tone === "warning" ? CMS_COLORS.warning : CMS_COLORS.danger;
+                return (
+                  <div key={e.EventID} className="dash-activity">
+                    <span className="cms-icon-tile"><CalendarOutlined /></span>
+                    <div className="dash-activity-body">
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                        <span className="dash-activity-title" title={e.EventTitle}>{e.EventTitle}</span>
+                        <Chip tone={tone} plain>{life.progress}%</Chip>
+                      </div>
+                      <div className="dash-progress">
+                        <span style={{ width: `${life.progress}%`, background: progressColor }} />
+                      </div>
+                      <div className="dash-dates">
+                        <span>{life.start.format("DD MMM")}</span>
+                        <span>{life.end.format("DD MMM")}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
             )}
-          </Card>
+          </Surface>
         </Col>
       </Row>
-    </div>
+    </Page>
   );
 };
 

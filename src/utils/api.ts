@@ -1,5 +1,8 @@
 import axios from "axios";
 import { getToken, setToken } from "./function";
+import { installApiActivity } from "./apiActivity";
+
+installApiActivity();
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||

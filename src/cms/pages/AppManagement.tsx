@@ -1,7 +1,6 @@
 // ================= pages/AppManagement.tsx =================
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
-  Card,
   Form,
   Input,
   Switch,
@@ -15,8 +14,6 @@ import {
   Image,
   Row,
   Col,
-  Tag,
-  Badge,
   Tooltip,
 } from "antd";
 import {
@@ -28,10 +25,51 @@ import {
   BellOutlined,
   PlusOutlined,
   CompassOutlined,
+  ReloadOutlined,
+  DeleteOutlined,
+  NotificationOutlined,
+  CheckCircleOutlined,
+  StopOutlined,
+  PictureOutlined,
 } from "@ant-design/icons";
 import { core_services } from "../../utils/api";
+import { CMS_COLORS } from "../cmstheme";
+import {
+  Page,
+  PageHeader,
+  Surface,
+  StatCard,
+  EmptyState,
+  Chip,
+  IconButton,
+  type ChipTone,
+} from "../../components/ui";
+import { useAsyncAction, useKeyedAction } from "../../hooks/useAsyncAction";
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
+
+/** API helpers throw either an object with `message` or a plain string. */
+const errText = (err: any) =>
+  err?.message || (typeof err === "string" ? err : "Something went wrong");
+
+/* ─────────────────────────────────────────
+   PHONE PREVIEW TONES
+   The preview simulates the (dark) mobile app,
+   built on Deep Navy with translucent layers.
+───────────────────────────────────────── */
+const PH = {
+  frame: CMS_COLORS.navy,
+  screen: CMS_COLORS.navy,
+  bar: "rgba(0,0,0,0.22)",
+  header: "rgba(255,255,255,0.04)",
+  card: "rgba(255,255,255,0.06)",
+  cardStrong: "rgba(255,255,255,0.1)",
+  line: "rgba(255,255,255,0.12)",
+  text: CMS_COLORS.white,
+  text2: CMS_COLORS.silver,
+  muted: CMS_COLORS.textMuted,
+  accent: "#7F9BF0",
+};
 
 /* ─────────────────────────────────────────
    PLACEMENT CONFIG
@@ -40,29 +78,33 @@ const { Text, Title } = Typography;
 ───────────────────────────────────────── */
 const PLACEMENTS: Record<
   string,
-  { screens: string[]; color: string; label: string; description: string }
+  { screens: string[]; color: string; tone: ChipTone; label: string; description: string }
 > = {
   banner: {
     screens: ["home"],
-    color: "#3B82F6",
+    color: CMS_COLORS.primary,
+    tone: "primary",
     label: "Social Banner",
     description: "Full-width banner on Home screen below location header",
   },
   in_feed_ad: {
     screens: ["home"],
-    color: "#10B981",
+    color: CMS_COLORS.success,
+    tone: "success",
     label: "In Feed Ad",
     description: "Inline ad card inside the Home social feed",
   },
   sponsored_event: {
     screens: ["events"],
-    color: "#F59E0B",
+    color: CMS_COLORS.warning,
+    tone: "warning",
     label: "Sponsored Event",
     description: "Event card with Sponsored badge on Events screen",
   },
   map_banner: {
     screens: ["map"],
-    color: "#8B5CF6",
+    color: CMS_COLORS.navy,
+    tone: "neutral",
     label: "Map Banner",
     description: "Floating sponsored card overlaid on the Map screen",
   },
@@ -77,6 +119,35 @@ const SCREEN_TABS = [
   { key: "events", label: "Events", icon: <CalendarOutlined /> },
 ];
 
+/* Page-scoped styles not covered by index.css */
+const PAGE_CSS = `
+.am-preview-tabs { width: 100%; }
+.am-preview-tabs .cms-pill-tab {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center;
+  gap: 6px; position: relative; padding: 8px 10px;
+}
+.am-preview-tabs .cms-pill-tab.is-dim { opacity: 0.5; }
+.am-preview-tabs .am-tab-dot {
+  width: 6px; height: 6px; border-radius: 99px; position: absolute; top: 6px; right: 10px;
+}
+.am-placement-note {
+  background: var(--wy-light); border-radius: 14px; padding: 10px 14px;
+  font-size: 12px; color: var(--wy-text-2);
+}
+.am-place-icons { display: flex; gap: 6px; }
+.am-place-icon {
+  width: 28px; height: 28px; border-radius: 99px; display: inline-grid; place-items: center;
+  font-size: 13px; background: var(--wy-light); color: var(--wy-primary); cursor: default;
+}
+.am-place-icon.is-off { background: transparent; color: var(--wy-silver); border: 1px dashed var(--wy-border); }
+.am-thumb-empty {
+  width: 64px; height: 40px; border-radius: 10px; background: var(--wy-light);
+  color: var(--wy-silver); display: grid; place-items: center; font-size: 16px;
+}
+.am-row-busy > td { opacity: 0.5; transition: opacity 0.2s; }
+.am-stats { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+`;
+
 /* ─────────────────────────────────────────
    MAP GRID SVG  (simplified street grid)
 ───────────────────────────────────────── */
@@ -84,25 +155,20 @@ const MapGrid = () => (
   <svg
     width="100%"
     height="100%"
-    style={{ position: "absolute", inset: 0, opacity: 0.35 }}
+    style={{ position: "absolute", inset: 0, opacity: 0.5 }}
     xmlns="http://www.w3.org/2000/svg"
   >
     <defs>
       <pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse">
-        <path
-          d="M 28 0 L 0 0 0 28"
-          fill="none"
-          stroke="#334155"
-          strokeWidth="0.8"
-        />
+        <path d="M 28 0 L 0 0 0 28" fill="none" stroke="rgba(192,199,212,0.18)" strokeWidth="0.8" />
       </pattern>
     </defs>
     <rect width="100%" height="100%" fill="url(#grid)" />
     {/* diagonal roads */}
-    <line x1="0" y1="60" x2="280" y2="200" stroke="#1e3a5f" strokeWidth="6" />
-    <line x1="30" y1="0" x2="280" y2="300" stroke="#1e3a5f" strokeWidth="4" />
-    <line x1="0" y1="180" x2="280" y2="80" stroke="#1e3a5f" strokeWidth="5" />
-    <line x1="80" y1="0" x2="200" y2="340" stroke="#1e3a5f" strokeWidth="3" />
+    <line x1="0" y1="60" x2="280" y2="200" stroke="rgba(255,255,255,0.1)" strokeWidth="6" />
+    <line x1="30" y1="0" x2="280" y2="300" stroke="rgba(255,255,255,0.1)" strokeWidth="4" />
+    <line x1="0" y1="180" x2="280" y2="80" stroke="rgba(255,255,255,0.1)" strokeWidth="5" />
+    <line x1="80" y1="0" x2="200" y2="340" stroke="rgba(255,255,255,0.1)" strokeWidth="3" />
   </svg>
 );
 
@@ -113,12 +179,12 @@ const PhoneMockup: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div
     style={{
       width: 280,
+      maxWidth: "100%",
       height: 560,
-      borderRadius: 36,
-      background: "#0B1829",
-      border: "2px solid #1E3A5F",
-      boxShadow:
-        "0 0 0 1px #0a1628, 0 24px 60px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.06)",
+      borderRadius: 40,
+      background: PH.frame,
+      border: `6px solid ${PH.frame}`,
+      boxShadow: "0 30px 60px -24px rgba(32,42,64,0.55), 0 0 0 1px rgba(32,42,64,0.08)",
       overflow: "hidden",
       position: "relative",
       display: "flex",
@@ -129,7 +195,7 @@ const PhoneMockup: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     <div
       style={{
         height: 28,
-        background: "#060E1A",
+        background: PH.bar,
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
@@ -137,24 +203,16 @@ const PhoneMockup: React.FC<{ children: React.ReactNode }> = ({ children }) => (
         flexShrink: 0,
       }}
     >
-      <Text style={{ color: "#94A3B8", fontSize: 10 }}>9:41</Text>
+      <Text style={{ color: PH.text2, fontSize: 10 }}>9:41</Text>
       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
         {[3, 4, 5, 6].map((h) => (
-          <div
-            key={h}
-            style={{
-              width: 3,
-              height: h,
-              background: "#94A3B8",
-              borderRadius: 1,
-            }}
-          />
+          <div key={h} style={{ width: 3, height: h, background: PH.text2, borderRadius: 1 }} />
         ))}
         <div
           style={{
             width: 14,
             height: 7,
-            border: "1px solid #94A3B8",
+            border: `1px solid ${PH.text2}`,
             borderRadius: 2,
             marginLeft: 4,
             position: "relative",
@@ -164,7 +222,7 @@ const PhoneMockup: React.FC<{ children: React.ReactNode }> = ({ children }) => (
             style={{
               position: "absolute",
               inset: 1,
-              background: "#94A3B8",
+              background: PH.text2,
               borderRadius: 1,
               width: "60%",
             }}
@@ -173,9 +231,7 @@ const PhoneMockup: React.FC<{ children: React.ReactNode }> = ({ children }) => (
       </div>
     </div>
     {/* Content */}
-    <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-      {children}
-    </div>
+    <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>{children}</div>
   </div>
 );
 
@@ -191,36 +247,26 @@ const HomeScreen: React.FC<{
   <div
     style={{
       height: "100%",
-      background: "#060E1A",
+      background: PH.screen,
       overflow: "hidden",
       display: "flex",
       flexDirection: "column",
     }}
   >
     {/* App header */}
-    <div style={{ padding: "10px 12px 6px", background: "#0B1829" }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-        }}
-      >
+    <div style={{ padding: "10px 12px 6px", background: PH.header }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <EnvironmentOutlined style={{ color: "#3B82F6", fontSize: 12 }} />
-            <Text style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>
-              Indore
-            </Text>
+            <EnvironmentOutlined style={{ color: PH.accent, fontSize: 12 }} />
+            <Text style={{ color: PH.text, fontSize: 13, fontWeight: 700 }}>Indore</Text>
           </div>
-          <Text style={{ color: "#64748B", fontSize: 9 }}>
-            Piplya Kumar, 452076
-          </Text>
+          <Text style={{ color: PH.muted, fontSize: 9 }}>Piplya Kumar, 452076</Text>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           <div
             style={{
-              border: "1.5px solid #3B82F6",
+              border: `1.5px solid ${PH.accent}`,
               borderRadius: 20,
               padding: "3px 8px",
               display: "flex",
@@ -228,21 +274,21 @@ const HomeScreen: React.FC<{
               gap: 4,
             }}
           >
-            <PlusOutlined style={{ color: "#3B82F6", fontSize: 9 }} />
-            <Text style={{ color: "#3B82F6", fontSize: 9 }}>Event</Text>
+            <PlusOutlined style={{ color: PH.accent, fontSize: 9 }} />
+            <Text style={{ color: PH.accent, fontSize: 9 }}>Event</Text>
           </div>
           <div
             style={{
               width: 24,
               height: 24,
               borderRadius: 12,
-              border: "1.5px solid #1E3A5F",
+              border: `1.5px solid ${PH.line}`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <BellOutlined style={{ color: "#64748B", fontSize: 10 }} />
+            <BellOutlined style={{ color: PH.muted, fontSize: 10 }} />
           </div>
         </div>
       </div>
@@ -253,12 +299,12 @@ const HomeScreen: React.FC<{
       <div style={{ padding: "8px 10px 4px" }}>
         <div
           style={{
-            borderRadius: 12,
+            borderRadius: 14,
             overflow: "hidden",
             position: "relative",
-            background: image ? "transparent" : "#122B44",
+            background: image ? "transparent" : PH.card,
             height: 90,
-            border: isActive ? "1.5px solid #3B82F6" : "1.5px solid #1E3A5F",
+            border: `1.5px solid ${isActive ? PH.accent : PH.line}`,
             transition: "all 0.3s",
           }}
         >
@@ -279,10 +325,8 @@ const HomeScreen: React.FC<{
                 gap: 4,
               }}
             >
-              <EyeOutlined style={{ color: "#334155", fontSize: 18 }} />
-              <Text style={{ color: "#334155", fontSize: 9 }}>
-                Upload image to preview
-              </Text>
+              <EyeOutlined style={{ color: PH.muted, fontSize: 18 }} />
+              <Text style={{ color: PH.muted, fontSize: 9 }}>Upload image to preview</Text>
             </div>
           )}
           {/* Sponsored badge */}
@@ -291,7 +335,7 @@ const HomeScreen: React.FC<{
               position: "absolute",
               bottom: 6,
               left: 6,
-              background: "rgba(0,0,0,0.65)",
+              background: "rgba(32,42,64,0.7)",
               backdropFilter: "blur(4px)",
               border: "1px solid rgba(255,255,255,0.1)",
               borderRadius: 6,
@@ -302,9 +346,7 @@ const HomeScreen: React.FC<{
             }}
           >
             <span style={{ fontSize: 8 }}>📢</span>
-            <Text style={{ color: "#CBD5E1", fontSize: 8, fontWeight: 600 }}>
-              SPONSORED
-            </Text>
+            <Text style={{ color: PH.text2, fontSize: 8, fontWeight: 600 }}>SPONSORED</Text>
           </div>
           {/* External link */}
           <div
@@ -315,13 +357,13 @@ const HomeScreen: React.FC<{
               width: 18,
               height: 18,
               borderRadius: 4,
-              background: "rgba(0,0,0,0.5)",
+              background: "rgba(32,42,64,0.6)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <Text style={{ color: "#94A3B8", fontSize: 8 }}>↗</Text>
+            <Text style={{ color: PH.text2, fontSize: 8 }}>↗</Text>
           </div>
           {/* Title label */}
           {title && (
@@ -336,7 +378,7 @@ const HomeScreen: React.FC<{
             >
               <Text
                 style={{
-                  color: "#fff",
+                  color: PH.text,
                   fontSize: 9,
                   fontWeight: 500,
                   textShadow: "0 1px 3px rgba(0,0,0,0.8)",
@@ -356,8 +398,8 @@ const HomeScreen: React.FC<{
         <div
           key={i}
           style={{
-            background: "#0F1E30",
-            borderRadius: 10,
+            background: PH.card,
+            borderRadius: 12,
             padding: 8,
             marginBottom: 6,
             display: "flex",
@@ -366,32 +408,13 @@ const HomeScreen: React.FC<{
           }}
         >
           <div
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 8,
-              background: "#1E3A5F",
-              flexShrink: 0,
-            }}
+            style={{ width: 32, height: 32, borderRadius: 10, background: PH.cardStrong, flexShrink: 0 }}
           />
           <div style={{ flex: 1 }}>
             <div
-              style={{
-                height: 6,
-                background: "#1E3A5F",
-                borderRadius: 3,
-                marginBottom: 4,
-                width: "70%",
-              }}
+              style={{ height: 6, background: PH.cardStrong, borderRadius: 3, marginBottom: 4, width: "70%" }}
             />
-            <div
-              style={{
-                height: 5,
-                background: "#162030",
-                borderRadius: 3,
-                width: "50%",
-              }}
-            />
+            <div style={{ height: 5, background: PH.card, borderRadius: 3, width: "50%" }} />
           </div>
         </div>
       ))}
@@ -408,14 +431,7 @@ const MapScreen: React.FC<{
   title: string;
   isActive: boolean;
 }> = ({ type, image, title, isActive }) => (
-  <div
-    style={{
-      height: "100%",
-      background: "#0B1829",
-      position: "relative",
-      overflow: "hidden",
-    }}
-  >
+  <div style={{ height: "100%", background: PH.screen, position: "relative", overflow: "hidden" }}>
     <MapGrid />
 
     {/* "You are here" dot */}
@@ -437,21 +453,13 @@ const MapScreen: React.FC<{
           width: 16,
           height: 16,
           borderRadius: "50%",
-          background: "#3B82F6",
+          background: CMS_COLORS.primary,
           border: "2.5px solid #fff",
-          boxShadow: "0 0 0 4px rgba(59,130,246,0.25)",
+          boxShadow: "0 0 0 4px rgba(53,89,199,0.3)",
         }}
       />
-      <div
-        style={{
-          background: "rgba(11,24,41,0.85)",
-          borderRadius: 10,
-          padding: "2px 7px",
-        }}
-      >
-        <Text style={{ color: "#fff", fontSize: 8, fontWeight: 600 }}>
-          You are here
-        </Text>
+      <div style={{ background: "rgba(32,42,64,0.85)", borderRadius: 10, padding: "2px 7px" }}>
+        <Text style={{ color: PH.text, fontSize: 8, fontWeight: 600 }}>You are here</Text>
       </div>
     </div>
 
@@ -471,14 +479,14 @@ const MapScreen: React.FC<{
         <div
           style={{
             flex: 1,
-            borderRadius: 14,
+            borderRadius: 16,
             overflow: "hidden",
-            background: image ? "transparent" : "#122B44",
-            border: isActive ? "1.5px solid #3B82F6" : "1.5px solid #1E3A5F",
+            background: image ? "transparent" : CMS_COLORS.navy,
+            border: `1.5px solid ${isActive ? PH.accent : PH.line}`,
             position: "relative",
             height: 80,
             transition: "all 0.3s",
-            boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
+            boxShadow: "0 8px 20px -6px rgba(0,0,0,0.5)",
           }}
         >
           {image ? (
@@ -488,15 +496,8 @@ const MapScreen: React.FC<{
               style={{ width: "100%", height: "100%", objectFit: "cover" }}
             />
           ) : (
-            <div
-              style={{
-                height: "100%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <EyeOutlined style={{ color: "#334155", fontSize: 16 }} />
+            <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <EyeOutlined style={{ color: PH.muted, fontSize: 16 }} />
             </div>
           )}
           {/* SPONSORED badge top-right */}
@@ -505,31 +506,25 @@ const MapScreen: React.FC<{
               position: "absolute",
               top: 5,
               right: 5,
-              background: "#00B4D8",
+              background: CMS_COLORS.primary,
               borderRadius: 5,
               padding: "1px 5px",
             }}
           >
-            <Text
-              style={{
-                color: "#000",
-                fontSize: 7,
-                fontWeight: 800,
-                letterSpacing: 0.5,
-              }}
-            >
+            <Text style={{ color: "#fff", fontSize: 7, fontWeight: 800, letterSpacing: 0.5 }}>
               SPONSORED
             </Text>
           </div>
           {title && (
-            <div
-              style={{
-                position: "absolute",
-                bottom: 4,
-                left: 6,
-              }}
-            >
-              <Text style={{ color: "#fff", fontSize: 8, fontWeight: 600, textShadow: "0 1px 3px rgba(0,0,0,0.8)" }}>
+            <div style={{ position: "absolute", bottom: 4, left: 6 }}>
+              <Text
+                style={{
+                  color: PH.text,
+                  fontSize: 8,
+                  fontWeight: 600,
+                  textShadow: "0 1px 3px rgba(0,0,0,0.8)",
+                }}
+              >
                 {title}
               </Text>
             </div>
@@ -552,17 +547,19 @@ const MapScreen: React.FC<{
       >
         <div
           style={{
-            background: "rgba(11,24,41,0.85)",
-            borderRadius: 12,
+            background: "rgba(32,42,64,0.9)",
+            borderRadius: 14,
             padding: "10px 16px",
-            border: "1px dashed #1E3A5F",
+            border: `1px dashed ${PH.line}`,
             textAlign: "center",
           }}
         >
-          <CompassOutlined style={{ color: "#334155", fontSize: 20 }} />
+          <CompassOutlined style={{ color: PH.muted, fontSize: 20 }} />
           <br />
-          <Text style={{ color: "#334155", fontSize: 9, display: "block", marginTop: 4 }}>
-            This type doesn't<br />appear on Map
+          <Text style={{ color: PH.muted, fontSize: 9, display: "block", marginTop: 4 }}>
+            This type doesn't
+            <br />
+            appear on Map
           </Text>
         </div>
       </div>
@@ -579,30 +576,43 @@ const EventsScreen: React.FC<{
   title: string;
   isActive: boolean;
 }> = ({ type, image, title, isActive }) => (
-  <div
-    style={{
-      height: "100%",
-      background: "#060E1A",
-      display: "flex",
-      flexDirection: "column",
-    }}
-  >
+  <div style={{ height: "100%", background: PH.screen, display: "flex", flexDirection: "column" }}>
     {/* Events header */}
-    <div style={{ padding: "10px 12px 8px", background: "#0B1829" }}>
+    <div style={{ padding: "10px 12px 8px", background: PH.header }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-            <EnvironmentOutlined style={{ color: "#3B82F6", fontSize: 12 }} />
-            <Text style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>Events</Text>
+            <EnvironmentOutlined style={{ color: PH.accent, fontSize: 12 }} />
+            <Text style={{ color: PH.text, fontSize: 13, fontWeight: 700 }}>Events</Text>
           </div>
-          <Text style={{ color: "#64748B", fontSize: 9 }}>Piplya Momsore, 450076</Text>
+          <Text style={{ color: PH.muted, fontSize: 9 }}>Piplya Momsore, 450076</Text>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
-          <div style={{ width: 24, height: 24, borderRadius: 12, background: "#1E3A5F", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Text style={{ color: "#94A3B8", fontSize: 10 }}>F</Text>
+          <div
+            style={{
+              width: 24,
+              height: 24,
+              borderRadius: 12,
+              background: PH.cardStrong,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Text style={{ color: PH.text2, fontSize: 10 }}>F</Text>
           </div>
-          <div style={{ width: 24, height: 24, borderRadius: 12, border: "1.5px solid #1E3A5F", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <BellOutlined style={{ color: "#64748B", fontSize: 10 }} />
+          <div
+            style={{
+              width: 24,
+              height: 24,
+              borderRadius: 12,
+              border: `1.5px solid ${PH.line}`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <BellOutlined style={{ color: PH.muted, fontSize: 10 }} />
           </div>
         </div>
       </div>
@@ -612,14 +622,9 @@ const EventsScreen: React.FC<{
         {["Musical", "Test", "Screening", "Celebration"].map((cat) => (
           <div
             key={cat}
-            style={{
-              background: "#122B44",
-              borderRadius: 20,
-              padding: "3px 8px",
-              flexShrink: 0,
-            }}
+            style={{ background: PH.cardStrong, borderRadius: 20, padding: "3px 8px", flexShrink: 0 }}
           >
-            <Text style={{ color: "#CBD5E1", fontSize: 8 }}>{cat}</Text>
+            <Text style={{ color: PH.text2, fontSize: 8 }}>{cat}</Text>
           </div>
         ))}
       </div>
@@ -630,11 +635,11 @@ const EventsScreen: React.FC<{
       {type === "sponsored_event" && (
         <div
           style={{
-            borderRadius: 12,
-            background: "#0F1E30",
+            borderRadius: 14,
+            background: PH.card,
             overflow: "hidden",
             marginBottom: 8,
-            border: isActive ? "1.5px solid #F59E0B" : "1.5px solid #1E3A5F",
+            border: `1.5px solid ${isActive ? CMS_COLORS.warning : PH.line}`,
             transition: "all 0.3s",
           }}
         >
@@ -648,13 +653,13 @@ const EventsScreen: React.FC<{
             <div
               style={{
                 height: 70,
-                background: "#122B44",
+                background: PH.card,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <EyeOutlined style={{ color: "#334155", fontSize: 16 }} />
+              <EyeOutlined style={{ color: PH.muted, fontSize: 16 }} />
             </div>
           )}
           <div style={{ padding: "6px 8px" }}>
@@ -663,20 +668,18 @@ const EventsScreen: React.FC<{
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 3,
-                background: "rgba(245,158,11,0.12)",
-                border: "1px solid #F59E0B",
+                background: "rgba(201,130,26,0.16)",
+                border: `1px solid ${CMS_COLORS.warning}`,
                 borderRadius: 20,
                 padding: "2px 7px",
                 marginBottom: 4,
               }}
             >
               <span style={{ fontSize: 8 }}>📢</span>
-              <Text style={{ color: "#F59E0B", fontSize: 8, fontWeight: 600 }}>
-                Sponsored
-              </Text>
+              <Text style={{ color: CMS_COLORS.warning, fontSize: 8, fontWeight: 600 }}>Sponsored</Text>
             </div>
             {title && (
-              <Text style={{ color: "#fff", fontSize: 9, display: "block", fontWeight: 500 }}>
+              <Text style={{ color: PH.text, fontSize: 9, display: "block", fontWeight: 500 }}>
                 {title}
               </Text>
             )}
@@ -689,11 +692,11 @@ const EventsScreen: React.FC<{
         <div
           key={i}
           style={{
-            background: "#0F1E30",
-            borderRadius: 10,
+            background: PH.card,
+            borderRadius: 12,
             marginBottom: 6,
             height: type === "sponsored_event" ? 55 : 70,
-            border: "1px solid #162030",
+            border: "1px solid rgba(255,255,255,0.05)",
           }}
         />
       ))}
@@ -703,15 +706,17 @@ const EventsScreen: React.FC<{
           style={{
             textAlign: "center",
             padding: "8px",
-            border: "1px dashed #1E3A5F",
-            borderRadius: 8,
+            border: `1px dashed ${PH.line}`,
+            borderRadius: 10,
             marginTop: 4,
           }}
         >
-          <CalendarOutlined style={{ color: "#334155", fontSize: 14 }} />
+          <CalendarOutlined style={{ color: PH.muted, fontSize: 14 }} />
           <br />
-          <Text style={{ color: "#334155", fontSize: 9, display: "block", marginTop: 3 }}>
-            This type doesn't<br />appear on Events
+          <Text style={{ color: PH.muted, fontSize: 9, display: "block", marginTop: 3 }}>
+            This type doesn't
+            <br />
+            appear on Events
           </Text>
         </div>
       )}
@@ -754,117 +759,46 @@ const LivePreview = ({ form }: { form: any }) => {
   const placement = PLACEMENTS[type] || PLACEMENTS.banner;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, height: "100%" }}>
-      {/* Header */}
-      <div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-          <div
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              background: isActive ? "#22C55E" : "#EF4444",
-              boxShadow: isActive
-                ? "0 0 0 3px rgba(34,197,94,0.2)"
-                : "0 0 0 3px rgba(239,68,68,0.2)",
-              transition: "all 0.3s",
-            }}
-          />
-          <Text style={{ fontWeight: 700, fontSize: 14 }}>Live Preview</Text>
-          <Tag
-            color={placement.color}
-            style={{ marginLeft: "auto", fontSize: 10, fontWeight: 600 }}
-          >
+    <div style={{ display: "flex", flexDirection: "column", gap: 14, height: "100%" }}>
+      {/* Status + placement */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <Chip tone={isActive ? "success" : "danger"}>{isActive ? "Active" : "Inactive"}</Chip>
+        <span style={{ marginLeft: "auto" }}>
+          <Chip tone={placement.tone} plain>
             {placement.label}
-          </Tag>
-        </div>
+          </Chip>
+        </span>
+      </div>
 
-        {/* Placement description */}
-        <div
-          style={{
-            background: "#F0F9FF",
-            border: `1px solid ${placement.color}40`,
-            borderLeft: `3px solid ${placement.color}`,
-            borderRadius: 6,
-            padding: "6px 10px",
-            marginBottom: 8,
-          }}
-        >
-          <Text style={{ fontSize: 11, color: "#475569" }}>
-            📍 <strong>Appears on:</strong> {placement.description}
-          </Text>
-        </div>
+      {/* Placement description */}
+      <div className="am-placement-note" style={{ borderLeft: `3px solid ${placement.color}` }}>
+        <EnvironmentOutlined style={{ color: placement.color, marginRight: 6 }} />
+        <strong style={{ color: CMS_COLORS.navy }}>Appears on:</strong> {placement.description}
       </div>
 
       {/* Screen tabs */}
-      <div style={{ display: "flex", gap: 6 }}>
+      <div className="cms-pill-tabs am-preview-tabs" role="tablist">
         {SCREEN_TABS.map((tab) => {
           const isRelevant = placement.screens.includes(tab.key);
+          const selected = activeScreen === tab.key;
           return (
             <Tooltip
               key={tab.key}
-              title={
-                isRelevant
-                  ? `Banner appears here`
-                  : `Banner doesn't appear on ${tab.label}`
-              }
+              title={isRelevant ? `Banner appears here` : `Banner doesn't appear on ${tab.label}`}
             >
               <button
+                type="button"
+                role="tab"
+                aria-selected={selected}
                 onClick={() => setActiveScreen(tab.key)}
-                style={{
-                  flex: 1,
-                  padding: "5px 0",
-                  borderRadius: 8,
-                  border: activeScreen === tab.key
-                    ? `1.5px solid ${isRelevant ? placement.color : "#94A3B8"}`
-                    : "1.5px solid #E2E8F0",
-                  background: activeScreen === tab.key
-                    ? isRelevant
-                      ? `${placement.color}15`
-                      : "#F8FAFC"
-                    : "#fff",
-                  cursor: "pointer",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: 2,
-                  transition: "all 0.2s",
-                  opacity: isRelevant ? 1 : 0.5,
-                  position: "relative",
-                }}
+                className={`cms-pill-tab ${selected ? "is-active" : ""} ${isRelevant ? "" : "is-dim"}`}
               >
-                <span
-                  style={{
-                    color: activeScreen === tab.key
-                      ? isRelevant ? placement.color : "#64748B"
-                      : "#94A3B8",
-                    fontSize: 14,
-                  }}
-                >
-                  {tab.icon}
-                </span>
-                <span
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 600,
-                    color: activeScreen === tab.key
-                      ? isRelevant ? placement.color : "#64748B"
-                      : "#94A3B8",
-                  }}
-                >
-                  {tab.label}
-                </span>
+                {tab.icon}
+                {tab.label}
                 {isRelevant && (
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 4,
-                      right: 4,
-                      width: 6,
-                      height: 6,
-                      borderRadius: "50%",
-                      background: placement.color,
-                    }}
+                  <span
+                    className="am-tab-dot"
+                    style={{ background: selected ? "#fff" : placement.color }}
                   />
                 )}
               </button>
@@ -874,7 +808,7 @@ const LivePreview = ({ form }: { form: any }) => {
       </div>
 
       {/* Phone */}
-      <div style={{ display: "flex", justifyContent: "center", flex: 1 }}>
+      <div style={{ display: "flex", justifyContent: "center", flex: 1, padding: "6px 0" }}>
         <PhoneMockup>
           {activeScreen === "home" && (
             <HomeScreen type={type} image={previewUrl} title={title} isActive={isActive} />
@@ -889,27 +823,23 @@ const LivePreview = ({ form }: { form: any }) => {
       </div>
 
       {/* Placement summary */}
-      <div
-        style={{
-          background: "#F8FAFC",
-          border: "1px solid #E2E8F0",
-          borderRadius: 8,
-          padding: "8px 12px",
-        }}
-      >
-        <Text style={{ fontSize: 11, color: "#64748B", display: "block", marginBottom: 4 }}>
-          <strong>All placements for this type:</strong>
+      <div>
+        <Text
+          style={{ fontSize: 12, fontWeight: 600, color: CMS_COLORS.textSecondary, display: "block", marginBottom: 8 }}
+        >
+          All placements for this type:
         </Text>
-        <div style={{ display: "flex", gap: 4 }}>
-          {SCREEN_TABS.map((tab) => (
-            <Tag
-              key={tab.key}
-              color={placement.screens.includes(tab.key) ? "blue" : "default"}
-              style={{ fontSize: 10, opacity: placement.screens.includes(tab.key) ? 1 : 0.4 }}
-            >
-              {placement.screens.includes(tab.key) ? "✓" : "✗"} {tab.label}
-            </Tag>
-          ))}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {SCREEN_TABS.map((tab) => {
+            const on = placement.screens.includes(tab.key);
+            return (
+              <Chip key={tab.key} tone={on ? "primary" : "neutral"} plain>
+                <span style={{ opacity: on ? 1 : 0.55 }}>
+                  {on ? "✓" : "✗"} {tab.label}
+                </span>
+              </Chip>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -922,22 +852,32 @@ const LivePreview = ({ form }: { form: any }) => {
 const AppManagement: React.FC = () => {
   const [banners, setBanners] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadedOnce, setLoadedOnce] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [form] = Form.useForm();
 
+  // Track overlapping fetches so `loading` only clears when the latest one ends,
+  // and stale responses never overwrite newer data.
+  const fetchSeq = useRef(0);
+
   /* fetch */
   const fetchBanners = useCallback(async () => {
+    const seq = ++fetchSeq.current;
+    setLoading(true);
     try {
-      setLoading(true);
       const res = await core_services.getAllBanners();
+      if (seq !== fetchSeq.current) return;
       const sorted = (res.banners || []).sort(
         (a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0)
       );
       setBanners(sorted);
     } catch (err: any) {
-      message.error(err.message);
+      if (seq === fetchSeq.current) message.error(errText(err));
     } finally {
-      setLoading(false);
+      if (seq === fetchSeq.current) {
+        setLoading(false);
+        setLoadedOnce(true);
+      }
     }
   }, []);
 
@@ -945,84 +885,83 @@ const AppManagement: React.FC = () => {
     fetchBanners();
   }, [fetchBanners]);
 
+  const [refresh] = useAsyncAction(fetchBanners);
+
   /* create */
-  const onFinish = async (values: any) => {
+  const [onFinish, creating] = useAsyncAction(async (values: any) => {
     try {
-      console.log("Form values:", values);
       const formData = new FormData();
       formData.append("title", values.title);
       formData.append("type", values.type || "banner");
       formData.append("sort_order", values.sort_order || "0");
       formData.append("is_active", values.is_active ? "1" : "0");
       if (values.link_url) formData.append("link_url", values.link_url);
-      if (values.image?.length > 0)
-        formData.append("image", values.image[0].originFileObj);
-      console.log("FormData entries:");
-      for (const pair of formData.entries()) {
-        console.log(pair[0], pair[1]);
-      }
+      if (values.image?.length > 0) formData.append("image", values.image[0].originFileObj);
       await core_services.createBanner(formData);
       message.success("Banner created 🚀");
       form.resetFields();
-      fetchBanners();
+      await fetchBanners();
     } catch (err: any) {
-      message.error(err.message);
+      message.error(errText(err));
     }
-  };
+  });
 
-  /* delete */
-  const handleDelete = async (id: string) => {
-    await core_services.deleteBanner(id);
-    fetchBanners();
-    setSelectedRowKeys((prev) => prev.filter((key) => key !== id));
-  };
+  /* delete (single row) */
+  const remove = useKeyedAction(async (id: string | number) => {
+    try {
+      await core_services.deleteBanner(String(id));
+      setSelectedRowKeys((prev) => prev.filter((key) => key !== id));
+      await fetchBanners();
+    } catch (err: any) {
+      message.error(errText(err));
+    }
+  });
 
-  const handleDeleteSelected = async () => {
+  /* delete (bulk) */
+  const [handleDeleteSelected, bulkDeleting] = useAsyncAction(async () => {
     if (selectedRowKeys.length === 0) {
       message.warning("No banners selected.");
       return;
     }
-    setLoading(true);
     try {
-      await Promise.all(
-        selectedRowKeys.map((key) => core_services.deleteBanner(String(key)))
-      );
+      await Promise.all(selectedRowKeys.map((key) => core_services.deleteBanner(String(key))));
       message.success("Selected banners deleted.");
       setSelectedRowKeys([]);
-      fetchBanners();
+      await fetchBanners();
     } catch (err: any) {
-      message.error(err.message);
-    } finally {
-      setLoading(false);
+      message.error(errText(err));
     }
-  };
+  });
 
-  const handleToggle = async (id: string) => {
-    await core_services.toggleBanner(id);
-    fetchBanners();
-  };
+  /* toggle */
+  const toggle = useKeyedAction(async (id: string | number) => {
+    try {
+      await core_services.toggleBanner(String(id));
+      await fetchBanners();
+    } catch (err: any) {
+      message.error(errText(err));
+    }
+  });
+
+  const liveCount = banners.filter((b) => b.is_active).length;
+  const statsLoading = loading && !loadedOnce;
 
   /* table */
   const columns = [
     {
       title: "Preview",
-      width: 80,
+      width: 88,
       render: (_: any, record: any) =>
         record.image_url ? (
-          <Image src={record.image_url} width={60} style={{ borderRadius: 6 }} />
+          <Image
+            src={record.image_url}
+            width={64}
+            height={40}
+            style={{ borderRadius: 10, objectFit: "cover" }}
+          />
         ) : (
-          <div
-            style={{
-              width: 60,
-              height: 40,
-              background: "#F1F5F9",
-              borderRadius: 6,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Text style={{ color: "#CBD5E1", fontSize: 10 }}>No img</Text>
+          <div className="am-thumb-empty" title="No image">
+            <PictureOutlined />
           </div>
         ),
     },
@@ -1030,25 +969,16 @@ const AppManagement: React.FC = () => {
       title: "Title",
       dataIndex: "title",
       sorter: (a: any, b: any) => a.title.localeCompare(b.title),
+      render: (t: string) => <span style={{ fontWeight: 600, color: CMS_COLORS.navy }}>{t}</span>,
     },
     {
       title: "Type",
       dataIndex: "type",
       render: (type: string) => {
         const p = PLACEMENTS[type];
-        return (
-          <Tag
-            color={p?.color || "blue"}
-            style={{ fontWeight: 600, fontSize: 11 }}
-          >
-            {p?.label || type}
-          </Tag>
-        );
+        return <Chip tone={p?.tone || "primary"}>{p?.label || type}</Chip>;
       },
-      filters: Object.entries(PLACEMENTS).map(([value, { label }]) => ({
-        text: label,
-        value,
-      })),
+      filters: Object.entries(PLACEMENTS).map(([value, { label }]) => ({ text: label, value })),
       onFilter: (value: any, record: any) => record.type === value,
     },
     {
@@ -1058,24 +988,15 @@ const AppManagement: React.FC = () => {
       render: (type: string) => {
         const p = PLACEMENTS[type];
         return (
-          <div style={{ display: "flex", gap: 3 }}>
-            {SCREEN_TABS.map((tab) => (
-              <Tooltip
-                key={tab.key}
-                title={`${p?.screens.includes(tab.key) ? "Shown" : "Not shown"} on ${tab.label}`}
-              >
-                <Tag
-                  style={{
-                    opacity: p?.screens.includes(tab.key) ? 1 : 0.3,
-                    fontSize: 10,
-                    cursor: "default",
-                    margin: 0,
-                  }}
-                >
-                  {tab.icon}
-                </Tag>
-              </Tooltip>
-            ))}
+          <div className="am-place-icons">
+            {SCREEN_TABS.map((tab) => {
+              const on = !!p?.screens.includes(tab.key);
+              return (
+                <Tooltip key={tab.key} title={`${on ? "Shown" : "Not shown"} on ${tab.label}`}>
+                  <span className={`am-place-icon ${on ? "" : "is-off"}`}>{tab.icon}</span>
+                </Tooltip>
+              );
+            })}
           </div>
         );
       },
@@ -1083,15 +1004,18 @@ const AppManagement: React.FC = () => {
     {
       title: "Order",
       dataIndex: "sort_order",
-      width: 70,
+      width: 80,
       sorter: (a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0),
+      render: (v: any) => <span style={{ color: CMS_COLORS.textSecondary }}>{v ?? 0}</span>,
     },
     {
       title: "Status",
       render: (_: any, record: any) => (
         <Switch
           checked={record.is_active}
-          onChange={() => handleToggle(record.id)}
+          loading={toggle.isPending(record.id)}
+          disabled={remove.isPending(record.id) || bulkDeleting}
+          onChange={() => void toggle.run(record.id)}
           checkedChildren="Live"
           unCheckedChildren="Off"
         />
@@ -1100,8 +1024,19 @@ const AppManagement: React.FC = () => {
     {
       title: "Action",
       render: (_: any, record: any) => (
-        <Popconfirm title="Delete this banner?" onConfirm={() => handleDelete(record.id)}>
-          <Button danger size="small">
+        <Popconfirm
+          title="Delete this banner?"
+          onConfirm={() => remove.run(record.id)}
+          okButtonProps={{ danger: true }}
+          disabled={bulkDeleting}
+        >
+          <Button
+            danger
+            size="small"
+            icon={<DeleteOutlined />}
+            loading={remove.isPending(record.id)}
+            disabled={bulkDeleting}
+          >
             Delete
           </Button>
         </Popconfirm>
@@ -1110,34 +1045,61 @@ const AppManagement: React.FC = () => {
   ];
 
   return (
-    <Card
-      title={
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span>🚀</span>
-          <Title level={4} style={{ margin: 0 }}>
-            App Management
-          </Title>
-          <Badge count={banners.length} style={{ background: "#3B82F6" }} />
-        </div>
-      }
-      styles={{ body: { padding: "16px 20px" } }}
-    >
-      <Row gutter={32}>
-        {/* ── FORM ── */}
-        <Col xs={24} md={12}>
-          <div
-            style={{
-              background: "#FAFBFC",
-              border: "1px solid #E2E8F0",
-              borderRadius: 12,
-              padding: 20,
-            }}
-          >
-            <Title level={5} style={{ margin: "0 0 16px", color: "#1E293B" }}>
-              Create New Banner
-            </Title>
+    <Page>
+      <style>{PAGE_CSS}</style>
 
-            <Form form={form} layout="vertical" onFinish={onFinish}>
+      <PageHeader
+        title="App Management"
+        subtitle="Create sponsored banners and preview exactly where they appear in the app."
+        actions={
+          <Tooltip title="Refresh">
+            <IconButton label="Refresh banners" onClick={() => void refresh()} disabled={loading}>
+              <ReloadOutlined spin={loading} />
+            </IconButton>
+          </Tooltip>
+        }
+      />
+
+      {/* ── STATS ── */}
+      <div className="am-stats">
+        <StatCard
+          label="Total banners"
+          value={banners.length}
+          icon={<NotificationOutlined />}
+          loading={statsLoading}
+        />
+        <StatCard
+          label="Live"
+          value={liveCount}
+          icon={<CheckCircleOutlined />}
+          tone="success"
+          loading={statsLoading}
+        />
+        <StatCard
+          label="Off"
+          value={banners.length - liveCount}
+          icon={<StopOutlined />}
+          tone="warning"
+          loading={statsLoading}
+        />
+      </div>
+
+      <Row gutter={[20, 20]}>
+        {/* ── FORM ── */}
+        <Col xs={24} lg={13}>
+          <Surface
+            title="Create New Banner"
+            icon={<PlusOutlined />}
+            style={{ height: "100%" }}
+            bodyStyle={{ padding: 22 }}
+          >
+            <Form
+              form={form}
+              layout="vertical"
+              onFinish={onFinish}
+              disabled={creating}
+              requiredMark={false}
+            >
               <Form.Item
                 label="Title"
                 name="title"
@@ -1146,24 +1108,14 @@ const AppManagement: React.FC = () => {
                 <Input placeholder="e.g. Shampoo Ad, RCB Schedule" />
               </Form.Item>
 
-              <Form.Item
-                label="Banner Type"
-                name="type"
-                initialValue="banner"
-              >
+              <Form.Item label="Banner Type" name="type" initialValue="banner">
                 <Select
-                  onChange={() => { }}
                   options={Object.entries(PLACEMENTS).map(([value, { label, color }]) => ({
                     value,
                     label: (
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div
-                          style={{
-                            width: 8,
-                            height: 8,
-                            borderRadius: "50%",
-                            background: color,
-                          }}
+                        <span
+                          style={{ width: 8, height: 8, borderRadius: "50%", background: color }}
                         />
                         {label}
                       </div>
@@ -1188,12 +1140,12 @@ const AppManagement: React.FC = () => {
               </Form.Item>
 
               <Row gutter={12}>
-                <Col span={12}>
+                <Col xs={24} sm={12}>
                   <Form.Item name="sort_order" label="Sort Order">
                     <Input type="number" min={0} placeholder="0" />
                   </Form.Item>
                 </Col>
-                <Col span={12}>
+                <Col xs={24} sm={12}>
                   <Form.Item
                     name="is_active"
                     label="Status"
@@ -1205,68 +1157,88 @@ const AppManagement: React.FC = () => {
                 </Col>
               </Row>
 
-              <Button type="primary" htmlType="submit" block size="large">
-                Create Banner 🚀
+              <Button
+                type="primary"
+                htmlType="submit"
+                block
+                size="large"
+                icon={<PlusOutlined />}
+                loading={creating}
+                disabled={false}
+              >
+                {creating ? "Creating…" : "Create Banner"}
               </Button>
             </Form>
-          </div>
+          </Surface>
         </Col>
 
         {/* ── LIVE PREVIEW ── */}
-        <Col xs={24} md={12}>
-          <div
-            style={{
-              background: "#FAFBFC",
-              border: "1px solid #E2E8F0",
-              borderRadius: 12,
-              padding: 20,
-              minHeight: 500,
-            }}
+        <Col xs={24} lg={11}>
+          <Surface
+            title="Live Preview"
+            icon={<EyeOutlined />}
+            style={{ height: "100%" }}
+            bodyStyle={{ padding: 22 }}
           >
             <LivePreview form={form} />
-          </div>
+          </Surface>
         </Col>
       </Row>
 
       {/* ── TABLE ── */}
-      <div style={{ marginTop: 28 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 12,
-          }}
-        >
-          <Title level={5} style={{ margin: 0 }}>
-            Active Banners
-          </Title>
-          {selectedRowKeys.length > 0 && (
+      <Surface
+        title="Active Banners"
+        icon={<NotificationOutlined />}
+        count={banners.length}
+        bodyStyle={{ padding: 0 }}
+        extra={
+          selectedRowKeys.length > 0 && (
             <Button
               danger
-              onClick={handleDeleteSelected}
-              disabled={loading}
+              icon={<DeleteOutlined />}
+              onClick={() => void handleDeleteSelected()}
+              loading={bulkDeleting}
+              disabled={loading && !bulkDeleting}
             >
               Delete Selected ({selectedRowKeys.length})
             </Button>
-          )}
-        </div>
-
+          )
+        }
+      >
         <Table
           rowKey="id"
           rowSelection={{
             selectedRowKeys,
             onChange: (keys: React.Key[]) => setSelectedRowKeys(keys),
+            getCheckboxProps: () => ({ disabled: bulkDeleting }),
           }}
+          rowClassName={(record: any) =>
+            remove.isPending(record.id) ||
+            (bulkDeleting && selectedRowKeys.includes(record.id))
+              ? "am-row-busy"
+              : ""
+          }
           dataSource={banners}
           columns={columns}
-          loading={loading}
+          loading={loading || bulkDeleting}
+          locale={{
+            emptyText:
+              loading || !loadedOnce ? (
+                <div style={{ height: 160 }} />
+              ) : (
+                <EmptyState
+                  title="No banners yet"
+                  description="Create your first banner using the form above."
+                  icon={<NotificationOutlined />}
+                />
+              ),
+          }}
           pagination={{ pageSize: 6, showTotal: (total) => `${total} banners` }}
           size="middle"
-          scroll={{ x: 700 }}
+          scroll={{ x: "max-content" }}
         />
-      </div>
-    </Card>
+      </Surface>
+    </Page>
   );
 };
 
